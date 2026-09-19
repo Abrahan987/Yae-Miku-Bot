@@ -1,7 +1,7 @@
-<div align="center">
+<div align="center"><img src="https://qu.ax/FdqjE.jpg" width="400">Esperando que mi empleado trabaje... ⏳
 
-  <img src="https://qu.ax/FdqjE" alt="Imagen de espera" width="400">
+Dueño: "Abrahan986" (https://github.com/Abrahan986)
 
-  ### Esperando que mi empleado trabaje... ⏳
+Contribuyente: "Ryuzei-Ts" (https://github.com/Ryuzei-Ts)
 
 </div>
