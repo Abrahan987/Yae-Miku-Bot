@@ -7,17 +7,13 @@ import { serialize } from '#simple';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-declare global {
-    var plugins: Record<string, any>;
-}
-
-globalThis.plugins = globalThis.plugins || {};
+const commandMap = new Map<string, Function>();
 
 export async function loadPlugins(dir = './src/plugins') {
     const cmdDir = path.resolve(__dirname, dir);
     if (!fs.existsSync(cmdDir)) return;
 
-    const newPlugins: Record<string, any> = {};
+    commandMap.clear();
 
     async function getAllFiles(directory: string): Promise<string[]> {
         const entries = await fsPromises.readdir(directory, { withFileTypes: true });
@@ -41,28 +37,36 @@ export async function loadPlugins(dir = './src/plugins') {
                 try {
                     const fileUrl = pathToFileURL(fullPath).href;
                     const cmdModule = await import(`${fileUrl}?update=${ts}`);
-                    const plugin = cmdModule.default?.default || cmdModule.default || cmdModule;
-                    const pluginName = path.basename(fullPath);
-                    newPlugins[pluginName] = plugin;
+                    
+                    const handlerFn = cmdModule.default?.default || cmdModule.default || cmdModule.run;
+                    if (typeof handlerFn !== 'function') return;
+
+                    const cmds = cmdModule.command || cmdModule.cmd || cmdModule.alias || cmdModule.default?.command || [];
+                    const commandList = Array.isArray(cmds) ? cmds : [cmds];
+
+                    for (const cmd of commandList) {
+                        if (cmd) commandMap.set(String(cmd).toLowerCase(), handlerFn);
+                    }
                 } catch {}
             })
         );
-
-        globalThis.plugins = newPlugins;
     } catch (e) {
         console.error('\x1b[38;2;255;182;218m[ ERROR ] Error al cargar plugins:\x1b[0m', e);
     }
 }
 
-async function executePlugins(sock: WASocket, rawMsg: any, msg: any) {
-    for (const name in globalThis.plugins) {
-        const plugin = globalThis.plugins[name];
-        if (typeof plugin === 'function') {
-            await plugin(sock, rawMsg, msg);
-        } else if (typeof plugin?.run === 'function') {
-            await plugin.run(sock, rawMsg, msg);
-        }
-    }
+async function executeCommand(sock: WASocket, rawMsg: any, msg: any) {
+    if (!msg.body) return;
+
+    const text = msg.body.trim();
+    const args = text.split(/\s+/);
+    const rawCmd = args.shift()?.toLowerCase() || '';
+    const cleanCmd = rawCmd.replace(/^[./#!]/, '');
+
+    const runFn = commandMap.get(rawCmd) || commandMap.get(cleanCmd);
+    if (!runFn) return;
+
+    await runFn(sock, rawMsg, msg, { text, args, command: cleanCmd });
 }
 
 export function handler(sock: WASocket) {
@@ -78,7 +82,7 @@ export function handler(sock: WASocket) {
             const msg = serialize(sock, rawMsg);
             if (!msg) continue;
 
-            executePlugins(sock, rawMsg, msg).catch(() => {});
+            executeCommand(sock, rawMsg, msg).catch(() => {});
         }
     });
 
