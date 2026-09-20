@@ -1,3 +1,4 @@
+import './config.ts';
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
@@ -9,7 +10,6 @@ import P from 'pino';
 import { Boom } from '@hapi/boom';
 import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs';
 import readline from 'readline';
 import qrcode from 'qrcode';
 import { loadDB } from '#db';
