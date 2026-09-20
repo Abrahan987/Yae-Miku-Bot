@@ -5,7 +5,7 @@
   "main": "index.ts",
   "author": "ABRAHAN-M",
   "scripts": {
-    "start": "node index.ts",
+  "start": "tsx index.ts",
     "dev": "node --watch index.ts",
     "build": "tsc --noEmit"
   },
