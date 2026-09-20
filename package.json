@@ -1,9 +1,9 @@
 {
-  "name": "Raiden-WaBot",
+  "name": "Yae-Miku",
   "version": "1.0.0",
   "type": "module",
   "main": "index.ts",
-  "author": "Ryuzei-Ts",
+  "author": "ABRAHAN-M",
   "scripts": {
     "start": "node index.ts",
     "dev": "node --watch index.ts",
