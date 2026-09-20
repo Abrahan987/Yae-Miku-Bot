@@ -1,5 +1,6 @@
-import { WASocket, proto, jidNormalizedUser } from '@whiskeysockets/baileys';
 
+import { proto, jidNormalizedUser } from '@whiskeysockets/baileys';
+import type { WASocket } from '@whiskeysockets/baileys';
 export interface SerializedMessage {
     id: string;
     key: proto.IMessageKey;
