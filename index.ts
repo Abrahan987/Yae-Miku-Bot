@@ -188,7 +188,7 @@ ${rosa}─────── ❀ ───────${reset}
     handler(sock);
 }
 
-startBot().catch(() => {});
+startBot().catch((err) => console.error(err));
 
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
