@@ -1,4 +1,4 @@
-import { WASocket } from '@whiskeysockets/baileys';
+import type { WASocket } from '@whiskeysockets/baileys';
 import fs, { promises as fsPromises } from 'fs';
 import path, { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
