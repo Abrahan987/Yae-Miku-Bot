@@ -10,7 +10,7 @@
     "build": "tsc --noEmit"
   },
   "imports": {
-    "#db": "./lib/database.ts",
+    "#db": "./src/lib/database.ts",
     "#handler": "./handler.ts",
     "#index": "./index.ts",
     "#simple": "./src/lib/simple.ts"
