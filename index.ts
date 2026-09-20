@@ -14,7 +14,7 @@ import readline from 'readline';
 import qrcode from 'qrcode';
 import { loadDB } from '#db';
 import { handler, loadPlugins } from '#handler';
-
+import './config.ts';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
