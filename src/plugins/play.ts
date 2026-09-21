@@ -67,7 +67,7 @@ export default async function (sock: any, msg: any, extra: any) {
 
         if (!data?.status || !data?.data?.dl) {
             return msg.reply(
-                `𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾 ⚠︎`
+                `𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾 Ptmdre ⚠︎`
             );
         }
 
