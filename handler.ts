@@ -10,108 +10,224 @@ const __dirname = dirname(__filename);
 
 const commandMap = new Map<string, Function>();
 
+export const pluginData = new Map<
+    string,
+    {
+        commands: string[];
+        category: string;
+    }
+>();
+
 export async function loadPlugins(dir = './src/plugins') {
-const cmdDir = path.resolve(__dirname, dir);
-if (!fs.existsSync(cmdDir)) return;
+    const cmdDir = path.resolve(__dirname, dir);
 
-commandMap.clear();
+    if (!fs.existsSync(cmdDir)) return;
 
-async function getAllFiles(directory: string): Promise<string[]> {
-    const entries = await fsPromises.readdir(directory, { withFileTypes: true });
-    const files = await Promise.all(entries.map(e => {
-        const res = join(directory, e.name);
-        return e.isDirectory() ? getAllFiles(res) : Promise.resolve([res]);
-    }));
-    return files.flat();
-}
+    commandMap.clear();
+    pluginData.clear();
 
-try {
-    const allFiles = await getAllFiles(cmdDir);
-    const files = allFiles.filter(f =>
-        (f.endsWith('.ts') || f.endsWith('.js')) && !f.endsWith('.d.ts')
-    );
+    async function getAllFiles(directory: string): Promise<string[]> {
+        const entries = await fsPromises.readdir(directory, {
+            withFileTypes: true
+        });
 
-    const ts = Date.now();
+        const files = await Promise.all(
+            entries.map(e => {
+                const res = join(directory, e.name);
 
-    await Promise.all(
-        files.map(async (fullPath) => {
-            try {
-                const fileUrl = pathToFileURL(fullPath).href;
-                const cmdModule = await import(`${fileUrl}?update=${ts}`);
+                return e.isDirectory()
+                    ? getAllFiles(res)
+                    : Promise.resolve([res]);
+            })
+        );
 
-                const handlerFn = cmdModule.default?.default || cmdModule.default || cmdModule.run;
-                if (typeof handlerFn !== 'function') return;
+        return files.flat();
+    }
 
-                const cmds = cmdModule.command || cmdModule.cmd || cmdModule.alias || cmdModule.default?.command || [];
-                const commandList = Array.isArray(cmds) ? cmds : [cmds];
+    try {
+        const allFiles = await getAllFiles(cmdDir);
 
-                for (const cmd of commandList) {
-                    if (cmd) commandMap.set(String(cmd).toLowerCase(), handlerFn);
+        const files = allFiles.filter(
+            f =>
+                (f.endsWith('.ts') || f.endsWith('.js')) &&
+                !f.endsWith('.d.ts')
+        );
+
+        const ts = Date.now();
+
+        await Promise.all(
+            files.map(async fullPath => {
+                try {
+                    const fileUrl = pathToFileURL(fullPath).href;
+
+                    const cmdModule = await import(
+                        `${fileUrl}?update=${ts}`
+                    );
+
+                    const handlerFn =
+                        cmdModule.default?.default ||
+                        cmdModule.default ||
+                        cmdModule.run;
+
+                    if (typeof handlerFn !== 'function') return;
+
+                    const cmds =
+                        cmdModule.command ||
+                        cmdModule.cmd ||
+                        cmdModule.alias ||
+                        cmdModule.default?.command ||
+                        [];
+
+                    const commandList = Array.isArray(cmds)
+                        ? cmds
+                        : [cmds];
+
+                    const category =
+                        cmdModule.category ||
+                        cmdModule.default?.category ||
+                        'misc';
+
+                    const commands = commandList
+                        .filter(Boolean)
+                        .map((cmd: any) => String(cmd).toLowerCase());
+
+                    for (const cmd of commands) {
+                        commandMap.set(cmd, handlerFn);
+                    }
+
+                    if (commands.length) {
+                        pluginData.set(fullPath, {
+                            commands,
+                            category: String(category).toLowerCase()
+                        });
+                    }
+                } catch (error) {
+                    console.error(
+                        '\x1b[38;2;255;182;218m[ PLUGIN ] Error:\x1b[0m',
+                        fullPath,
+                        error
+                    );
                 }
-            } catch {}
-        })
+            })
+        );
+    } catch (e) {
+        console.error(
+            '\x1b[38;2;255;182;218m[ ERROR ] Error al cargar plugins:\x1b[0m',
+            e
+        );
+    }
+}
+
+async function executeCommand(
+    sock: WASocket,
+    rawMsg: any,
+    msg: any
+) {
+    if (!msg.body) return;
+
+    const text = msg.body.trim();
+    const args = text.split(/\s+/);
+
+    const rawCmd = args.shift()?.toLowerCase() || '';
+    const cleanCmd = rawCmd.replace(/^[./#!]/, '');
+
+    const runFn =
+        commandMap.get(rawCmd) ||
+        commandMap.get(cleanCmd);
+
+    if (!runFn) return;
+
+    const dbHelpers = {
+        getUser: () => getUser(msg.sender),
+        getGroup: () => getGroup(msg.from),
+        updateUser: (data: any) => updateUser(msg.sender, data),
+        incrementCommandCount
+    };
+
+    const extra = {
+        text,
+        args,
+        command: cleanCmd
+    };
+
+    await runFn(
+        sock,
+        msg,
+        extra,
+        dbHelpers,
+        rawMsg
     );
-} catch (e) {
-    console.error('\x1b[38;2;255;182;218m[ ERROR ] Error al cargar plugins:\x1b[0m', e);
-}
-
-}
-
-async function executeCommand(sock: WASocket, rawMsg: any, msg: any) {
-if (!msg.body) return;
-
-const text = msg.body.trim();
-const args = text.split(/\s+/);
-const rawCmd = args.shift()?.toLowerCase() || '';
-const cleanCmd = rawCmd.replace(/^[./#!]/, '');
-
-const runFn = commandMap.get(rawCmd) || commandMap.get(cleanCmd);
-if (!runFn) return;
-
-const dbHelpers = {
-    getUser: () => getUser(msg.sender),
-    getGroup: () => getGroup(msg.from),
-    updateUser: (data: any) => updateUser(msg.sender, data),
-    incrementCommandCount
-};
-
-const extra = { text, args, command: cleanCmd };
-
-await runFn(sock, msg, extra, dbHelpers, rawMsg);
-
 }
 
 export function handler(sock: WASocket) {
-sock.ev.on('messages.upsert', ({ messages, type }) => {
-if (type !== 'notify') return;
+    sock.ev.on(
+        'messages.upsert',
+        ({ messages, type }) => {
+            if (type !== 'notify') return;
 
-    for (const rawMsg of messages) {
-        if (!rawMsg?.key?.id || !rawMsg.message) continue;
+            for (const rawMsg of messages) {
+                if (
+                    !rawMsg?.key?.id ||
+                    !rawMsg.message
+                ) {
+                    continue;
+                }
 
-        const jid = rawMsg.key.remoteJid || '';
-        if (jid === 'status@broadcast' || jid.endsWith('@broadcast')) continue;
+                const jid =
+                    rawMsg.key.remoteJid || '';
 
-        const msg = serialize(sock, rawMsg);
-        if (!msg) continue;
+                if (
+                    jid === 'status@broadcast' ||
+                    jid.endsWith('@broadcast')
+                ) {
+                    continue;
+                }
 
-        executeCommand(sock, rawMsg, msg).catch(() => {});
-    }
-});
+                const msg = serialize(
+                    sock,
+                    rawMsg
+                );
 
-const pluginsPath = path.join(__dirname, 'src', 'plugins');
+                if (!msg) continue;
 
-if (fs.existsSync(pluginsPath)) {
-    let timer: NodeJS.Timeout;
-
-    fs.watch(pluginsPath, { recursive: true }, (_, filename) => {
-        if (filename && (filename.endsWith('.ts') || filename.endsWith('.js'))) {
-            clearTimeout(timer);
-
-            timer = setTimeout(() => {
-                loadPlugins('./src/plugins').catch(() => {});
-            }, 300);
+                executeCommand(
+                    sock,
+                    rawMsg,
+                    msg
+                ).catch(() => {});
+            }
         }
-    });
-}
+    );
 
+    const pluginsPath = path.join(
+        __dirname,
+        'src',
+        'plugins'
+    );
+
+    if (fs.existsSync(pluginsPath)) {
+        let timer: NodeJS.Timeout;
+
+        fs.watch(
+            pluginsPath,
+            { recursive: true },
+            (_, filename) => {
+                if (
+                    filename &&
+                    (
+                        filename.endsWith('.ts') ||
+                        filename.endsWith('.js')
+                    )
+                ) {
+                    clearTimeout(timer);
+
+                    timer = setTimeout(() => {
+                        loadPlugins(
+                            './src/plugins'
+                        ).catch(() => {});
+                    }, 300);
+                }
+            }
+        );
+    }
 }
