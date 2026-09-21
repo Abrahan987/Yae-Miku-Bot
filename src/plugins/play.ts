@@ -19,7 +19,7 @@ export default async function (sock: any, msg: any, extra: any) {
 
     if (!text) {
         return msg.reply(
-            `𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝙴𝙻 𝙽𝙾𝙼𝙱𝚁𝙴 𝙾 𝚄𝚁𝙻 𝙳𝙴 𝙻𝙰 𝙲𝙰𝙽𝙲𝙸Ó𝙽\n\n` +
+            `🍓 𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝙴𝙻 𝙽𝙾𝙼𝙱𝚁𝙴 𝙾 𝚄𝚁𝙻 𝙳𝙴 𝙻𝙰 𝙲𝙰𝙽𝙲𝙸Ó𝙽\n\n` +
             `𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
             `> .𝚙𝚕𝚊𝚢 𝙾𝚑 𝙺𝚕𝚊𝚑𝚘𝚖𝚊`
         );
@@ -36,6 +36,12 @@ export default async function (sock: any, msg: any, extra: any) {
     processing.add(requestKey);
 
     try {
+        await msg.reply(
+            `🍓 𝙿𝙻𝙰𝚈\n` +
+            `─────── ❀ ───────\n\n` +
+            `🪷 𝙱𝚄𝚂𝙲𝙰𝙽𝙳𝙾 𝙲𝙰𝙽𝙲𝙸Ó𝙽...`
+        );
+
         let video: any;
 
         if (/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(text)) {
@@ -48,7 +54,7 @@ export default async function (sock: any, msg: any, extra: any) {
 
             if (!result.videos?.length) {
                 return msg.reply(
-                    `𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`
+                    `🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`
                 );
             }
 
@@ -67,7 +73,7 @@ export default async function (sock: any, msg: any, extra: any) {
 
         if (!data?.status || !data?.data?.dl) {
             return msg.reply(
-                `𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾 Ptmdre ⚠︎`
+                `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`
             );
         }
 
@@ -77,11 +83,13 @@ export default async function (sock: any, msg: any, extra: any) {
         const downloadUrl = data.data.dl;
 
         await msg.reply(
-            `ఌ︎ 𝙿𝙻𝙰𝚈\n\n` +
-            `𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
-            `𝙰𝚁𝚃𝙸𝚂𝚃𝙰 ── ${author}\n` +
-            `𝙲𝙰𝙻𝙸𝙳𝙰𝙳 ── ${quality}\n\n` +
-            `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...`
+            `🍓 𝙿𝙻𝙰𝚈\n` +
+            `─────── ❀ ───────\n\n` +
+            `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
+            `🍥 𝙰𝚁𝚃𝙸𝚂𝚃𝙰 ── ${author}\n` +
+            `🪷 𝙲𝙰𝙻𝙸𝙳𝙰𝙳 ── ${quality}\n\n` +
+            `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...\n\n` +
+            `─────── ❀ ───────`
         );
 
         const audioResponse = await axios.get(downloadUrl, {
@@ -123,7 +131,7 @@ export default async function (sock: any, msg: any, extra: any) {
         );
 
         await msg.reply(
-            `𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾 ⚠︎`
+            `⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`
         );
     } finally {
         processing.delete(requestKey);
