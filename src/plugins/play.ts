@@ -105,7 +105,7 @@ export default async function (sock: any, msg: any, extra: any) {
         const fileName = `${cleanTitle(title)}.mp3`;
 
         await sock.sendMessage(
-            msg.chat,
+            msg.from,
             {
                 audio: audioBuffer,
                 mimetype: 'audio/mpeg',
@@ -117,7 +117,10 @@ export default async function (sock: any, msg: any, extra: any) {
             }
         );
     } catch (error: any) {
-        console.error('[PLAY]', error?.response?.status || error?.message || error);
+        console.error(
+            '[PLAY]',
+            error?.response?.status || error?.message || error
+        );
 
         await msg.reply(
             `𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾 ⚠︎`
