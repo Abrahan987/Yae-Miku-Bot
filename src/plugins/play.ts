@@ -14,27 +14,6 @@ const cleanTitle = (title: string) => {
         .slice(0, 100);
 };
 
-const api = axios.create({
-    baseURL: API_URL,
-    timeout: 45000,
-    headers: {
-        'User-Agent': 'Mozilla/5.0',
-        'Accept': 'application/json'
-    }
-});
-
-const download = axios.create({
-    timeout: 120000,
-    responseType: 'arraybuffer',
-    maxContentLength: 50 * 1024 * 1024,
-    maxBodyLength: 50 * 1024 * 1024,
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
-        'Accept': 'audio/mpeg,audio/*,*/*',
-        'Referer': 'https://savetube.vip/'
-    }
-});
-
 export default async function (sock: any, msg: any, extra: any) {
     const text = extra.args.join(' ').trim();
 
@@ -76,11 +55,12 @@ export default async function (sock: any, msg: any, extra: any) {
             video = result.videos[0];
         }
 
-        const response = await api.get('/dl/ytmp3', {
+        const response = await axios.get(`${API_URL}/dl/ytmp3`, {
             params: {
                 url: video.url,
                 key: API_KEY
-            }
+            },
+            timeout: 45000
         });
 
         const data = response.data;
@@ -104,12 +84,22 @@ export default async function (sock: any, msg: any, extra: any) {
             `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...`
         );
 
-        const audio = await download.get(downloadUrl);
+        const audioResponse = await axios.get(downloadUrl, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            maxContentLength: 50 * 1024 * 1024,
+            maxBodyLength: 50 * 1024 * 1024,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+                'Accept': 'audio/mpeg,audio/*,*/*',
+                'Referer': 'https://savetube.vip/'
+            }
+        });
 
-        const audioBuffer = Buffer.from(audio.data);
+        const audioBuffer = Buffer.from(audioResponse.data);
 
         if (!audioBuffer.length) {
-            throw new Error('El archivo de audio está vacío');
+            throw new Error('Audio vacío');
         }
 
         const fileName = `${cleanTitle(title)}.mp3`;
@@ -127,17 +117,11 @@ export default async function (sock: any, msg: any, extra: any) {
             }
         );
     } catch (error: any) {
-        console.error('[PLAY]', error?.message || error);
+        console.error('[PLAY]', error?.response?.status || error?.message || error);
 
-        if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT') {
-            await msg.reply(
-                `𝚃𝙸𝙴𝙼𝙿𝙾 𝙳𝙴 𝙴𝚂𝙿𝙴𝚁𝙰 𝙰𝙶𝙾𝚃𝙰𝙳𝙾 ⚠︎`
-            );
-        } else {
-            await msg.reply(
-                `𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾.`
-            );
-        }
+        await msg.reply(
+            `𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾 ⚠︎`
+        );
     } finally {
         processing.delete(requestKey);
     }
@@ -149,4 +133,4 @@ export const command = [
     'ytmp3',
     'ytaudio',
     'playaudio'
-];  
+];
