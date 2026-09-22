@@ -14,6 +14,16 @@ const cleanTitle = (title: string) => {
         .slice(0, 100);
 };
 
+export const command = [
+    'play',
+    'mp3',
+    'ytmp3',
+    'ytaudio',
+    'playaudio'
+];
+export const category = 'descargas';
+export const description = 'Busca y descarga canciones de YouTube en formato MP3.';
+
 export default async function (sock: any, msg: any, extra: any) {
     const text = extra.args.join(' ').trim();
 
@@ -104,11 +114,3 @@ export default async function (sock: any, msg: any, extra: any) {
         processing.delete(requestKey);
     }
 }
-
-export const command = [
-    'play',
-    'mp3',
-    'ytmp3',
-    'ytaudio',
-    'playaudio'
-];
