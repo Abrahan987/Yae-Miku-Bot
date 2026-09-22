@@ -7,16 +7,20 @@ import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 loadPlugins().catch(() => {});
 watchPlugins();
 
-const DUP_CACHE_SIZE = 1000;
-const processedIds = new Array<string>(DUP_CACHE_SIZE);
-let cacheIndex = 0;
+const DUP_LIMIT = 2000;
+const processedIdsSet = new Set<string>();
+const processedIdsQueue: string[] = [];
 
 function isDuplicate(msgId: string): boolean {
-    for (let i = 0; i < DUP_CACHE_SIZE; i++) {
-        if (processedIds[i] === msgId) return true;
+    if (processedIdsSet.has(msgId)) return true;
+
+    processedIdsSet.add(msgId);
+    processedIdsQueue.push(msgId);
+
+    if (processedIdsQueue.length > DUP_LIMIT) {
+        const oldest = processedIdsQueue.shift();
+        if (oldest) processedIdsSet.delete(oldest);
     }
-    processedIds[cacheIndex] = msgId;
-    cacheIndex = (cacheIndex + 1) % DUP_CACHE_SIZE;
     return false;
 }
 
@@ -37,13 +41,15 @@ function extractCommandInfo(text: string): { cleanCmd: string; usedPrefix: strin
         usedPrefix = prefixes;
     }
 
-    const startPos = usedPrefix.length;
-    const bodyAfterPrefix = text.slice(startPos).trimStart();
-    
-    let spacePos = bodyAfterPrefix.indexOf(' ');
-    if (spacePos === -1) spacePos = bodyAfterPrefix.length;
+    let startPos = usedPrefix.length;
+    while (startPos < text.length && text.charCodeAt(startPos) === 32) {
+        startPos++;
+    }
 
-    const cleanCmd = bodyAfterPrefix.slice(0, spacePos).toLowerCase();
+    let spacePos = text.indexOf(' ', startPos);
+    if (spacePos === -1) spacePos = text.length;
+
+    const cleanCmd = text.slice(startPos, spacePos).toLowerCase();
     if (!cleanCmd) return null;
 
     return { cleanCmd, usedPrefix };
@@ -65,13 +71,15 @@ async function executeCommand(
     const runFn = commandMap.get(cleanCmd) || commandMap.get(`${usedPrefix}${cleanCmd}`);
     if (!runFn) return;
 
-    const startPos = usedPrefix.length;
-    const bodyAfterPrefix = text.slice(startPos).trimStart();
-    const firstSpaceIndex = bodyAfterPrefix.indexOf(' ');
+    let startPos = usedPrefix.length;
+    while (startPos < text.length && text.charCodeAt(startPos) === 32) {
+        startPos++;
+    }
     
+    const firstSpaceIndex = text.indexOf(' ', startPos);
     const args = firstSpaceIndex === -1 
         ? [] 
-        : bodyAfterPrefix.slice(firstSpaceIndex + 1).trim().split(/\s+/);
+        : text.slice(firstSpaceIndex + 1).trim().split(/\s+/);
 
     const dbHelpers = {
         getUser: () => getUser(msg.sender),
@@ -88,23 +96,15 @@ async function executeCommand(
     };
 
     try {
-        await runFn(
-            sock,
-            msg,
-            extra,
-            dbHelpers,
-            rawMsg
-        );
+        await runFn(sock, msg, extra, dbHelpers, rawMsg);
     } catch (error) {
         console.error(`[COMMAND ERROR] Fallo al ejecutar .${cleanCmd}:`, error);
         
-        try {
-            await sock.sendMessage(
-                msg.from,
-                { text: `Ocurrio un error al ejecutar el comando *${cleanCmd}*. Por favor reintenta.` },
-                { quoted: msg }
-            );
-        } catch {}
+        void sock.sendMessage(
+            msg.from,
+            { text: `Ocurrio un error al ejecutar el comando *${cleanCmd}*. Por favor reintenta.` },
+            { quoted: msg }
+        ).catch(() => {});
     }
 }
 
@@ -114,7 +114,8 @@ export function handler(sock: WASocket) {
         ({ messages, type }) => {
             if (type !== 'notify') return;
 
-            for (let i = 0; i < messages.length; i++) {
+            const len = messages.length;
+            for (let i = 0; i < len; i++) {
                 const rawMsg = messages[i];
                 const msgId = rawMsg?.key?.id;
                 if (!msgId || !rawMsg.message) continue;
@@ -127,7 +128,7 @@ export function handler(sock: WASocket) {
                 const msg = serialize(sock, rawMsg);
                 if (!msg) continue;
 
-                executeCommand(sock, rawMsg, msg).catch(() => {});
+                void executeCommand(sock, rawMsg, msg);
             }
         }
     );
