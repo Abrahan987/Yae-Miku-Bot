@@ -20,6 +20,28 @@ function isDuplicate(msgId: string): boolean {
     return false;
 }
 
+function getPrefix(text: string): string | null {
+    const prefixes = global.prefix;
+    
+    if (Array.isArray(prefixes)) {
+        for (const p of prefixes) {
+            if (text.startsWith(p)) return p;
+        }
+        return null;
+    }
+    
+    if (prefixes instanceof RegExp) {
+        const match = text.match(prefixes);
+        return match ? match[0] : null;
+    }
+
+    if (typeof prefixes === 'string') {
+        return text.startsWith(prefixes) ? prefixes : null;
+    }
+
+    return null;
+}
+
 async function executeCommand(
     sock: WASocket,
     rawMsg: any,
@@ -30,18 +52,22 @@ async function executeCommand(
     const text = msg.body.trim();
     if (!text) return;
 
-    const firstSpaceIndex = text.indexOf(' ');
-    const rawCmd = (firstSpaceIndex === -1 ? text : text.slice(0, firstSpaceIndex)).toLowerCase();
-    
-    if (!rawCmd) return;
+    const usedPrefix = getPrefix(text);
 
-    const prefixRegex = global.prefix || /^[./#!]/;
-    const cleanCmd = rawCmd.replace(prefixRegex, '');
+    let cleanText = text;
+    if (usedPrefix) {
+        cleanText = text.slice(usedPrefix.length).trim();
+    }
 
-    const runFn = commandMap.get(rawCmd) || commandMap.get(cleanCmd);
+    const firstSpaceIndex = cleanText.indexOf(' ');
+    const cleanCmd = (firstSpaceIndex === -1 ? cleanText : cleanText.slice(0, firstSpaceIndex)).toLowerCase();
+
+    if (!cleanCmd) return;
+
+    const runFn = commandMap.get(cleanCmd) || commandMap.get(`${usedPrefix || ''}${cleanCmd}`);
     if (!runFn) return;
 
-    const args = firstSpaceIndex === -1 ? [] : text.slice(firstSpaceIndex + 1).trim().split(/\s+/);
+    const args = firstSpaceIndex === -1 ? [] : cleanText.slice(firstSpaceIndex + 1).trim().split(/\s+/);
 
     const dbHelpers = {
         getUser: () => getUser(msg.sender),
