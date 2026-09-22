@@ -5,7 +5,7 @@ global.emojis = '';
 global.namebot = 'Yae Miku Bot';
 global.rcanal = '';
 global.banner = 'https://qu.ax/2EtYo.jpg';
-global.icono = 'https://qu.ax/FdqjE.jpg';
+global.icono = 'https://qu.ax/x/FdqjE.jpg';
 global.api = '';
 global.my = {
     ch: '',
