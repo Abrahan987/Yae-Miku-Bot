@@ -7,6 +7,19 @@ import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 loadPlugins().catch(() => {});
 watchPlugins();
 
+const processedMsgIds = new Set<string>();
+const MAX_CACHE_SIZE = 1500;
+
+function isDuplicate(msgId: string): boolean {
+    if (processedMsgIds.has(msgId)) return true;
+    if (processedMsgIds.size >= MAX_CACHE_SIZE) {
+        const oldestId = processedMsgIds.values().next().value;
+        if (oldestId) processedMsgIds.delete(oldestId);
+    }
+    processedMsgIds.add(msgId);
+    return false;
+}
+
 async function executeCommand(
     sock: WASocket,
     rawMsg: any,
@@ -15,16 +28,20 @@ async function executeCommand(
     if (!msg.body) return;
 
     const text = msg.body.trim();
-    const args = text.split(/\s+/);
+    if (!text) return;
 
-    const rawCmd = args.shift()?.toLowerCase() || '';
-    const cleanCmd = rawCmd.replace(/^[./#!]/, '');
+    const firstSpaceIndex = text.indexOf(' ');
+    const rawCmd = (firstSpaceIndex === -1 ? text : text.slice(0, firstSpaceIndex)).toLowerCase();
+    
+    if (!rawCmd) return;
 
-    const runFn =
-        commandMap.get(rawCmd) ||
-        commandMap.get(cleanCmd);
+    const prefixRegex = global.prefix || /^[./#!]/;
+    const cleanCmd = rawCmd.replace(prefixRegex, '');
 
+    const runFn = commandMap.get(rawCmd) || commandMap.get(cleanCmd);
     if (!runFn) return;
+
+    const args = firstSpaceIndex === -1 ? [] : text.slice(firstSpaceIndex + 1).trim().split(/\s+/);
 
     const dbHelpers = {
         getUser: () => getUser(msg.sender),
@@ -40,13 +57,25 @@ async function executeCommand(
         pluginData
     };
 
-    await runFn(
-        sock,
-        msg,
-        extra,
-        dbHelpers,
-        rawMsg
-    );
+    try {
+        await runFn(
+            sock,
+            msg,
+            extra,
+            dbHelpers,
+            rawMsg
+        );
+    } catch (error) {
+        console.error(`[COMMAND ERROR] Fallo al ejecutar .${cleanCmd}:`, error);
+        
+        try {
+            await sock.sendMessage(
+                msg.from,
+                { text: `Ocurrio un error al ejecutar el comando *${cleanCmd}*. Por favor reintenta.` },
+                { quoted: msg }
+            );
+        } catch {}
+    }
 }
 
 export function handler(sock: WASocket) {
@@ -56,35 +85,18 @@ export function handler(sock: WASocket) {
             if (type !== 'notify') return;
 
             for (const rawMsg of messages) {
-                if (
-                    !rawMsg?.key?.id ||
-                    !rawMsg.message
-                ) {
-                    continue;
-                }
+                const msgId = rawMsg?.key?.id;
+                if (!msgId || !rawMsg.message) continue;
 
-                const jid =
-                    rawMsg.key.remoteJid || '';
+                if (isDuplicate(msgId)) continue;
 
-                if (
-                    jid === 'status@broadcast' ||
-                    jid.endsWith('@broadcast')
-                ) {
-                    continue;
-                }
+                const jid = rawMsg.key.remoteJid || '';
+                if (jid === 'status@broadcast' || jid.endsWith('@broadcast')) continue;
 
-                const msg = serialize(
-                    sock,
-                    rawMsg
-                );
-
+                const msg = serialize(sock, rawMsg);
                 if (!msg) continue;
 
-                executeCommand(
-                    sock,
-                    rawMsg,
-                    msg
-                ).catch(() => {});
+                executeCommand(sock, rawMsg, msg).catch(() => {});
             }
         }
     );
