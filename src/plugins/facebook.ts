@@ -40,49 +40,18 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                     url,
                     key: API_KEY
                 },
+                responseType: 'arraybuffer',
+                timeout: 120000,
+                maxContentLength: 100 * 1024 * 1024,
+                maxBodyLength: 100 * 1024 * 1024,
                 headers: {
-                    'Content-Type': 'application/json'
-                },
-                timeout: 60000
+                    'User-Agent': 'Mozilla/5.0',
+                    'Accept': 'video/mp4,video/*,*/*'
+                }
             }
         );
 
-        const data = response.data;
-
-        const downloadUrl =
-            data?.data?.hd ||
-            data?.data?.sd ||
-            data?.data?.url ||
-            data?.data?.download ||
-            data?.hd ||
-            data?.sd ||
-            data?.url ||
-            data?.download;
-
-        if (!downloadUrl) {
-            return msg.reply(
-                `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾\n` +
-                `─────── ❀ ───────`
-            );
-        }
-
-        await msg.reply(
-            `🍓 𝙵𝙰𝙲𝙴𝙱𝙾𝙾𝙺\n` +
-            `─────── ❀ ───────\n\n` +
-            `🪷 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...`
-        );
-
-        const videoResponse = await axios.get(downloadUrl, {
-            responseType: 'arraybuffer',
-            timeout: 120000,
-            maxContentLength: 100 * 1024 * 1024,
-            maxBodyLength: 100 * 1024 * 1024,
-            headers: {
-                'User-Agent': 'Mozilla/5.0'
-            }
-        });
-
-        const videoBuffer = Buffer.from(videoResponse.data);
+        const videoBuffer = Buffer.from(response.data);
 
         if (!videoBuffer.length) {
             throw new Error('Video vacío');
@@ -95,7 +64,8 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                 mimetype: 'video/mp4',
                 caption:
                     `🍓 𝙵𝙰𝙲𝙴𝙱𝙾𝙾𝙺\n` +
-                    `─────── ❀ ───────`
+                    `─────── ❀ ───────\n\n` +
+                    `🪷 𝚅Í𝙳𝙴𝙾 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙳𝙾`
             },
             {
                 quoted: msg
