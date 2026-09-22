@@ -1,4 +1,4 @@
-import './config.js';
+import './config.ts';
 import type { WASocket } from '@whiskeysockets/baileys';
 import { serialize } from '#simple';
 import { getUser, getGroup, updateUser, incrementCommandCount } from '#db';
