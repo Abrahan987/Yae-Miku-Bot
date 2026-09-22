@@ -4,8 +4,8 @@ import { fileURLToPath } from 'url';
 global.emojis = '';
 global.namebot = 'Yae Miku Bot';
 global.rcanal = '';
-global.banner = 'https://raw.githubusercontent.com/IrokzDal/data/main/1789776770221.jpeg';
-global.icono = 'https://raw.githubusercontent.com/IrokzDal/data/main/1789777142507.jpeg';
+global.banner = 'https://raw.githubusercontent.com/IrokzDal/data/main/1789777142507.jpeg';
+global.icono = 'https://raw.githubusercontent.com/IrokzDal/data/main/1789776770221.jpeg';
 global.api = '';
 global.my = {
     ch: '',
