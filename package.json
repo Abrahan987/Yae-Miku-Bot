@@ -13,7 +13,8 @@
     "#db": "./src/lib/database.ts",
     "#handler": "./handler.ts",
     "#index": "./index.ts",
-    "#simple": "./src/lib/simple.ts"
+    "#simple": "./src/lib/simple.ts",
+    "#loader": "./src/lib/loader.ts"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
