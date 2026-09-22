@@ -16,7 +16,7 @@ export const pluginData = new Map<
     }
 >();
 
-export async function loadPlugins(dir = './plugins') {
+export async function loadPlugins(dir = '../plugins') {
     const cmdDir = path.resolve(__dirname, dir);
 
     if (!fs.existsSync(cmdDir)) return;
