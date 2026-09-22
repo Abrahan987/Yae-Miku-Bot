@@ -1,3 +1,5 @@
+ 
+
 import ytsearch from 'yt-search';
 import axios from 'axios';
 
@@ -63,38 +65,14 @@ export default async function (sock: any, msg: any, extra: any) {
             video = result.videos[0];
         }
 
-        await sock.sendMessage(
-            msg.from,
-            {
-                text:
-                    `🍓 𝙿𝙻𝙰𝚈\n` +
-                    `─────── ❀ ───────\n\n` +
-                    `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${video.title}\n` +
-                    `🍥 𝙰𝚁𝚃𝙸𝚂𝚃𝙰 ── ${video.author?.name || 'Desconocido'}\n` +
-                    `🪷 𝙳𝚄𝚁𝙰𝙲𝙸Ó𝙽 ── ${video.timestamp || 'N/A'}\n\n` +
-                    `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...\n\n` +
-                    `─────── ❀ ───────`,
-                contextInfo: {
-                    forwardingScore: 999,
-                    isForwarded: true,
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: global.my.ch,
-                        newsletterName: global.namebot || 'Canal Oficial',
-                        serverMessageId: 1
-                    },
-                    externalAdReply: {
-                        title: global.namebot || 'Canal Oficial',
-                        body: video.title,
-                        thumbnailUrl: global.icono,
-                        mediaType: 1,
-                        renderLargerThumbnail: false,
-                        showAdAttribution: false
-                    }
-                }
-            },
-            {
-                quoted: msg
-            }
+        await msg.reply(
+            `🍓 𝙿𝙻𝙰𝚈\n` +
+            `─────── ❀ ───────\n\n` +
+            `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${video.title}\n` +
+            `🍥 𝙰𝚁𝚃𝙸𝚂𝚃𝙰 ── ${video.author?.name || 'Desconocido'}\n` +
+            `🪷 𝙳𝚄𝚁𝙰𝙲𝙸Ó𝙽 ── ${video.timestamp || 'N/A'}\n\n` +
+            `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...\n\n` +
+            `─────── ❀ ───────`
         );
 
         const response = await axios.get(`${API_URL}/dl/ytmp3`, {
