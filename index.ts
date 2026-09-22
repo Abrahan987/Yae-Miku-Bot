@@ -1,4 +1,4 @@
-import './config.ts';
+import './config.js';
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
@@ -14,8 +14,9 @@ import fs from 'fs';
 import readline from 'readline';
 import qrcode from 'qrcode';
 import { loadDB } from '#db';
-import { handler, loadPlugins } from '#handler';
-import './config.ts';
+import { loadPlugins, watchPlugins } from '#loader';
+import { handler } from '#handler';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -61,6 +62,7 @@ const askQuestion = async (query: string): Promise<string> => {
 async function startBot() {
     await loadDB();
     await loadPlugins();
+    watchPlugins();
 
     if (!fs.existsSync(sDir)) {
         fs.mkdirSync(sDir, { recursive: true });
