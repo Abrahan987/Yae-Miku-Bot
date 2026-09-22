@@ -7,39 +7,46 @@ import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 loadPlugins().catch(() => {});
 watchPlugins();
 
-const processedMsgIds = new Set<string>();
-const MAX_CACHE_SIZE = 1500;
+const DUP_CACHE_SIZE = 1000;
+const processedIds = new Array<string>(DUP_CACHE_SIZE);
+let cacheIndex = 0;
 
 function isDuplicate(msgId: string): boolean {
-    if (processedMsgIds.has(msgId)) return true;
-    if (processedMsgIds.size >= MAX_CACHE_SIZE) {
-        const oldestId = processedMsgIds.values().next().value;
-        if (oldestId) processedMsgIds.delete(oldestId);
+    for (let i = 0; i < DUP_CACHE_SIZE; i++) {
+        if (processedIds[i] === msgId) return true;
     }
-    processedMsgIds.add(msgId);
+    processedIds[cacheIndex] = msgId;
+    cacheIndex = (cacheIndex + 1) % DUP_CACHE_SIZE;
     return false;
 }
 
-function getPrefix(text: string): string | null {
-    const prefixes = global.prefix;
-    
+const DEFAULT_PREFIXES = ['.', '#', '/', '!'];
+
+function extractCommandInfo(text: string): { cleanCmd: string; usedPrefix: string } | null {
+    const prefixes = global.prefix || DEFAULT_PREFIXES;
+    let usedPrefix = '';
+
     if (Array.isArray(prefixes)) {
-        for (const p of prefixes) {
-            if (text.startsWith(p)) return p;
+        for (let i = 0; i < prefixes.length; i++) {
+            if (text.startsWith(prefixes[i])) {
+                usedPrefix = prefixes[i];
+                break;
+            }
         }
-        return null;
+    } else if (typeof prefixes === 'string' && text.startsWith(prefixes)) {
+        usedPrefix = prefixes;
     }
+
+    const startPos = usedPrefix.length;
+    const bodyAfterPrefix = text.slice(startPos).trimStart();
     
-    if (prefixes instanceof RegExp) {
-        const match = text.match(prefixes);
-        return match ? match[0] : null;
-    }
+    let spacePos = bodyAfterPrefix.indexOf(' ');
+    if (spacePos === -1) spacePos = bodyAfterPrefix.length;
 
-    if (typeof prefixes === 'string') {
-        return text.startsWith(prefixes) ? prefixes : null;
-    }
+    const cleanCmd = bodyAfterPrefix.slice(0, spacePos).toLowerCase();
+    if (!cleanCmd) return null;
 
-    return null;
+    return { cleanCmd, usedPrefix };
 }
 
 async function executeCommand(
@@ -47,27 +54,24 @@ async function executeCommand(
     rawMsg: any,
     msg: any
 ) {
-    if (!msg.body) return;
-
-    const text = msg.body.trim();
+    const text = msg.body?.trim();
     if (!text) return;
 
-    const usedPrefix = getPrefix(text);
+    const parsed = extractCommandInfo(text);
+    if (!parsed) return;
 
-    let cleanText = text;
-    if (usedPrefix) {
-        cleanText = text.slice(usedPrefix.length).trim();
-    }
+    const { cleanCmd, usedPrefix } = parsed;
 
-    const firstSpaceIndex = cleanText.indexOf(' ');
-    const cleanCmd = (firstSpaceIndex === -1 ? cleanText : cleanText.slice(0, firstSpaceIndex)).toLowerCase();
-
-    if (!cleanCmd) return;
-
-    const runFn = commandMap.get(cleanCmd) || commandMap.get(`${usedPrefix || ''}${cleanCmd}`);
+    const runFn = commandMap.get(cleanCmd) || commandMap.get(`${usedPrefix}${cleanCmd}`);
     if (!runFn) return;
 
-    const args = firstSpaceIndex === -1 ? [] : cleanText.slice(firstSpaceIndex + 1).trim().split(/\s+/);
+    const startPos = usedPrefix.length;
+    const bodyAfterPrefix = text.slice(startPos).trimStart();
+    const firstSpaceIndex = bodyAfterPrefix.indexOf(' ');
+    
+    const args = firstSpaceIndex === -1 
+        ? [] 
+        : bodyAfterPrefix.slice(firstSpaceIndex + 1).trim().split(/\s+/);
 
     const dbHelpers = {
         getUser: () => getUser(msg.sender),
@@ -110,7 +114,8 @@ export function handler(sock: WASocket) {
         ({ messages, type }) => {
             if (type !== 'notify') return;
 
-            for (const rawMsg of messages) {
+            for (let i = 0; i < messages.length; i++) {
+                const rawMsg = messages[i];
                 const msgId = rawMsg?.key?.id;
                 if (!msgId || !rawMsg.message) continue;
 
