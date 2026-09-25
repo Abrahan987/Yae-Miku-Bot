@@ -22,7 +22,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     try {
         await msg.reply(
             `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `𖫨𖫨🪷⃨᪲  𖫨𖫨🪷⃨᪲  ${global.namebot}\n` +
+            `${global.namebot}\n` +
             `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
             `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃\n\n` +
             `🪷 𝙱𝚄𝚂𝙲𝙰𝙽𝙳𝙾 𝙸𝙼Á𝙶𝙴𝙽𝙴𝚂...`
@@ -44,39 +44,32 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
         const data = response.data;
 
-        if (data?.status !== true || !Array.isArray(data?.data) || !data.data.length) {
+        if (
+            data?.status !== true ||
+            !Array.isArray(data?.data) ||
+            data.data.length === 0
+        ) {
             throw new Error(
                 data?.message || 'No se encontraron resultados.'
             );
         }
 
-        const result = data.data[0];
+        const result = data.data.find(
+            (item: any) => item?.hd || item?.mini
+        );
 
-        if (!result?.hd) {
-            throw new Error('El resultado no contiene una imagen válida.');
+        if (!result) {
+            throw new Error('No se encontró una imagen válida.');
         }
 
-        const imageResponse = await axios.get(result.hd, {
-            responseType: 'arraybuffer',
-            timeout: 60000,
-            maxContentLength: 50 * 1024 * 1024,
-            maxBodyLength: 50 * 1024 * 1024,
-            headers: {
-                'User-Agent': 'Mozilla/5.0',
-                Accept: 'image/*'
-            }
-        });
-
-        const imageBuffer = Buffer.from(imageResponse.data);
-
-        if (!imageBuffer.length) {
-            throw new Error('La imagen está vacía.');
-        }
+        const imageUrl = result.hd || result.mini;
 
         await sock.sendMessage(
             msg.from,
             {
-                image: imageBuffer,
+                image: {
+                    url: imageUrl
+                },
                 caption:
                     `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃\n\n` +
                     `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${result.title || '𝚂𝙸𝙽 𝚃Í𝚃𝚄𝙻𝙾'}\n` +
@@ -93,10 +86,8 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     } catch (error: any) {
         console.error(
             '[PINTEREST]',
-            error?.response?.status ||
-            error?.response?.data ||
-            error?.message ||
-            error
+            error?.response?.status,
+            error?.response?.data || error?.message || error
         );
 
         await msg.reply(
