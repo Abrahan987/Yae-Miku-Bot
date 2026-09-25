@@ -23,6 +23,14 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     }
 
     try {
+        await msg.reply(
+            `𖫨𖫨🪷⃨᪲  ${global.namebot}\n` +
+            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
+            `🍓͜ᩧ𑂳ᰍ  𝚃𝙸𝙺𝚃𝙾𝙺\n` +
+            `> 𝙱𝚄𝚂𝙲𝙰𝙽𝙳𝙾 𝙸𝙽𝙵𝙾𝚁𝙼𝙰𝙲𝙸Ó𝙽...\n\n` +
+            `🪷 𝙴𝚂𝙿𝙴𝚁𝙰 𝚄𝙽 𝙼𝙾𝙼𝙴𝙽𝚃𝙾`
+        );
+
         const response = await axios.get(
             `${global.api}/dl/tiktok`,
             {
@@ -32,25 +40,29 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                 },
                 timeout: 60000,
                 headers: {
-                    'Content-Type': 'application/json'
+                    Accept: 'application/json'
                 }
             }
         );
 
         const data = response.data;
 
-        if (!data?.status || !data?.data?.dl) {
-            return msg.reply(
-                `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙻𝙰 𝙸𝙽𝙵𝙾𝚁𝙼𝙰𝙲𝙸Ó𝙽 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾`
+        if (!data || data.status !== true || !data.data) {
+            throw new Error(
+                data?.message || 'La API no devolvió información válida'
             );
         }
 
         const info = data.data;
 
+        if (!info.dl) {
+            throw new Error('La API no devolvió el enlace del video');
+        }
+
         const title = info.title || '𝚂𝙸𝙽 𝚃Í𝚃𝚄𝙻𝙾';
         const duration = info.duration || '𝙳𝙴𝚂𝙲𝙾𝙽𝙾𝙲𝙸𝙳𝙰';
-        const createdAt = info.created_at || '𝙳𝙴𝚂𝙲𝙾𝙽𝙾𝙲𝙸𝙳𝙰';
         const region = info.region || '𝙳𝙴𝚂𝙲𝙾𝙽𝙾𝙲𝙸𝙳𝙰';
+        const createdAt = info.created_at || '𝙳𝙴𝚂𝙲𝙾𝙽𝙾𝙲𝙸𝙳𝙰';
 
         const nickname = info.author?.nickname || '𝙳𝙴𝚂𝙲𝙾𝙽𝙾𝙲𝙸𝙳𝙾';
         const uniqueId = info.author?.unique_id || '𝙳𝙴𝚂𝙲𝙾𝙽𝙾𝙲𝙸𝙳𝙾';
@@ -65,10 +77,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             new Intl.NumberFormat('es-CO').format(number);
 
         await msg.reply(
-            `𖫨𖫨🪷⃨᪲  ${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-
-            `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾\n` +
+            `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾\n\n` +
             `> 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
             `> 𝙰𝚄𝚃𝙾𝚁 ── ${nickname}\n` +
             `> 𝚄𝚂𝙴𝚁 ── @${uniqueId}\n` +
@@ -83,24 +92,25 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `> 𝙲𝙾𝙼𝙿𝙰𝚁𝚃𝙸𝙳𝙾𝚂 ── ${formatNumber(shares)}\n` +
             `> 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝚂 ── ${formatNumber(downloads)}\n\n` +
 
-            `🍥͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾 ── 𝙿𝚁𝙴𝙿𝙰𝚁𝙰𝙽𝙳𝙾...`
+            `🍥͜ᩧ𑂳ᰍ  𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...`
         );
 
         const videoResponse = await axios.get(info.dl, {
             responseType: 'arraybuffer',
-            timeout: 120000,
-            maxContentLength: 100 * 1024 * 1024,
-            maxBodyLength: 100 * 1024 * 1024,
+            timeout: 180000,
+            maxContentLength: 150 * 1024 * 1024,
+            maxBodyLength: 150 * 1024 * 1024,
             headers: {
-                'User-Agent': 'Mozilla/5.0',
-                'Accept': 'video/mp4,video/*,*/*'
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36',
+                'Accept': 'video/mp4,video/*,*/*',
+                'Referer': 'https://www.tiktok.com/'
             }
         });
 
         const videoBuffer = Buffer.from(videoResponse.data);
 
         if (!videoBuffer.length) {
-            throw new Error('Video vacío');
+            throw new Error('TikTok devolvió un video vacío');
         }
 
         await sock.sendMessage(
@@ -112,11 +122,12 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                     `𖫨𖫨🪷⃨᪲  ${global.namebot}\n` +
                     `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
 
-                    `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙳𝙾\n\n` +
+                    `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾 𝚃𝙸𝙺𝚃𝙾𝙺\n\n` +
                     `> 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
                     `> 𝙰𝚄𝚃𝙾𝚁 ── ${nickname}\n` +
                     `> 𝚄𝚂𝙴𝚁 ── @${uniqueId}\n` +
-                    `> 𝙳𝚄𝚁𝙰𝙲𝙸Ó𝙽 ── ${duration}\n\n` +
+                    `> 𝙳𝚄𝚁𝙰𝙲𝙸Ó𝙽 ── ${duration}\n` +
+                    `> 𝚁𝙴𝙶𝙸Ó𝙽 ── ${region}\n\n` +
 
                     `🪷͜ᩧ𑂳ᰍ  𝙴𝚂𝚃𝙰𝙳Í𝚂𝚃𝙸𝙲𝙰𝚂\n` +
                     `> 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${formatNumber(plays)}\n` +
