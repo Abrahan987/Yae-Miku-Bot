@@ -9,9 +9,11 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
     if (!url) {
         return msg.reply(
-            `🍓͜ᩧ𑂳ᰍ  𝚃𝙸𝙺𝚃𝙾𝙺\n\n` +
-            `𝙴𝙽𝚅Í𝙰 𝙴𝙻 𝙴𝙽𝙻𝙰𝙲𝙴 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾\n\n` +
-            `🍥 𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
+            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
+            `𖫨𖫨🪷⃨᪲  𝚃𝙸𝙺𝚃𝙾𝙺\n` +
+            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
+            `🍓͜ᩧ𑂳ᰍ  𝙴𝙽𝚅Í𝙰 𝙴𝙻 𝙴𝙽𝙻𝙰𝙲𝙴 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾\n\n` +
+            `🪷 𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
             `> ${global.prefix[0]}𝚝𝚒𝚔𝚝𝚘𝚔 https://vt.tiktok.com/...`
         );
     }
@@ -23,20 +25,12 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     }
 
     try {
-        await msg.reply(
-            `𖫨𖫨🪷⃨᪲  ${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝚃𝙸𝙺𝚃𝙾𝙺\n` +
-            `> 𝙱𝚄𝚂𝙲𝙰𝙽𝙳𝙾 𝙸𝙽𝙵𝙾𝚁𝙼𝙰𝙲𝙸Ó𝙽...\n\n` +
-            `🪷 𝙴𝚂𝙿𝙴𝚁𝙰 𝚄𝙽 𝙼𝙾𝙼𝙴𝙽𝚃𝙾`
-        );
-
         const response = await axios.get(
-            `${global.api}/dl/tiktok`,
+            'https://api.stellarwa.xyz/dl/tiktok',
             {
                 params: {
                     url,
-                    key: global.key
+                    key: global.apikey
                 },
                 timeout: 60000,
                 headers: {
@@ -47,7 +41,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
         const data = response.data;
 
-        if (!data || data.status !== true || !data.data) {
+        if (!data?.status || !data?.data) {
             throw new Error(
                 data?.message || 'La API no devolvió información válida'
             );
@@ -77,7 +71,10 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             new Intl.NumberFormat('es-CO').format(number);
 
         await msg.reply(
-            `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾\n\n` +
+            `𖫨𖫨🪷⃨᪲  ${global.namebot}\n` +
+            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
+
+            `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾\n` +
             `> 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
             `> 𝙰𝚄𝚃𝙾𝚁 ── ${nickname}\n` +
             `> 𝚄𝚂𝙴𝚁 ── @${uniqueId}\n` +
@@ -100,17 +97,17 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             timeout: 180000,
             maxContentLength: 150 * 1024 * 1024,
             maxBodyLength: 150 * 1024 * 1024,
+            maxRedirects: 10,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36',
-                'Accept': 'video/mp4,video/*,*/*',
-                'Referer': 'https://www.tiktok.com/'
+                'User-Agent': 'Mozilla/5.0',
+                'Accept': 'video/mp4,video/*,*/*'
             }
         });
 
         const videoBuffer = Buffer.from(videoResponse.data);
 
         if (!videoBuffer.length) {
-            throw new Error('TikTok devolvió un video vacío');
+            throw new Error('Video vacío');
         }
 
         await sock.sendMessage(
@@ -122,7 +119,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                     `𖫨𖫨🪷⃨᪲  ${global.namebot}\n` +
                     `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
 
-                    `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾 𝚃𝙸𝙺𝚃𝙾𝙺\n\n` +
+                    `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙳𝙾\n\n` +
                     `> 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
                     `> 𝙰𝚄𝚃𝙾𝚁 ── ${nickname}\n` +
                     `> 𝚄𝚂𝙴𝚁 ── @${uniqueId}\n` +
