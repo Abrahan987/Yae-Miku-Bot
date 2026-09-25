@@ -1,6 +1,6 @@
 import './config.ts';
 import type { WASocket } from '@whiskeysockets/baileys';
-import { serialize, UserJid } from '#simple';
+import { serialize, UserJid, decodeJid } from '#simple';
 import { getUser, getGroup, updateUser, incrementCommandCount } from '#db';
 import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 import { LRUCache } from 'lru-cache';
@@ -52,12 +52,14 @@ function getAdminSet(participants: any[]): Set<string> {
                 adminSet.add(clean);
                 adminSet.add(stripMexOne(clean));
                 adminSet.add(p.id);
+                adminSet.add(decodeJid(p.id));
             }
             if (p.lid) {
                 const clean = normalizeNumber(p.lid);
                 adminSet.add(clean);
                 adminSet.add(stripMexOne(clean));
                 adminSet.add(p.lid);
+                adminSet.add(decodeJid(p.lid));
             }
             if (p.phoneNumber) {
                 const clean = normalizeNumber(p.phoneNumber);
@@ -183,24 +185,49 @@ async function executeCommand(
                       adminSet.has(rawParticipant) || 
                       adminSet.has(msgSender);
 
-            // CORRECCIÓN: Limpieza precisa de id de dispositivo y soporte LID para el Bot
-            const rawBotId = sock.user?.id || (sock.user as any)?.jid || '';
+            // ==================== FIX COMPLETO ISBOTADMIN ====================
+            const rawBotJid = sock.user?.id || (sock.user as any)?.jid || '';
             const rawBotLid = (sock.user as any)?.lid || '';
 
-            const cleanBotJid = rawBotId.split(':')[0].split('@')[0];
-            const botBase = normalizeNumber(cleanBotJid);
+            const resolvedBotJid = UserJid(sock, msg.from, rawBotJid);
+            const resolvedBotLid = rawBotLid ? UserJid(sock, msg.from, rawBotLid) : '';
+
+            const botBase = normalizeNumber(resolvedBotJid);
+            const botLidBase = normalizeNumber(resolvedBotLid);
+            
             const altBot = botBase.startsWith('521') 
                 ? botBase.replace(/^521/, '52') 
                 : (botBase.startsWith('52') ? botBase.replace(/^52/, '521') : botBase);
 
-            const cleanBotLid = rawBotLid ? normalizeNumber(rawBotLid) : '';
+            const cleanBotMex = stripMexOne(botBase);
 
             isBotAdmin = adminSet.has(botBase) || 
                          adminSet.has(altBot) || 
-                         adminSet.has(stripMexOne(botBase)) || 
-                         adminSet.has(rawBotId) ||
-                         (cleanBotLid ? adminSet.has(cleanBotLid) : false);
-        } catch {}
+                         adminSet.has(cleanBotMex) || 
+                         adminSet.has(rawBotJid) ||
+                         (botLidBase ? adminSet.has(botLidBase) : false) ||
+                         (rawBotLid ? adminSet.has(rawBotLid) : false) ||
+                         (resolvedBotJid ? adminSet.has(resolvedBotJid) : false) ||
+                         (resolvedBotLid ? adminSet.has(resolvedBotLid) : false);
+
+            if (!isBotAdmin && participants.length > 0) {
+                isBotAdmin = participants.some((p: any) => {
+                    if (p.admin !== 'admin' && p.admin !== 'superadmin') return false;
+                    
+                    const pId = normalizeNumber(p.id);
+                    const pLid = p.lid ? normalizeNumber(p.lid) : '';
+
+                    return pId === botBase || 
+                           pId === altBot || 
+                           pId === cleanBotMex || 
+                           (botLidBase && pLid === botLidBase) ||
+                           (pLid && pLid === botBase);
+                });
+            }
+            // =================================================================
+        } catch (e) {
+            console.error('[ISBOTADMIN ERROR]:', e);
+        }
     }
 
     const pluginObj = (runFn as any)?.plugin || runFn;
