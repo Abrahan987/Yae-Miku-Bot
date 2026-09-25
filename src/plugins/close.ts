@@ -10,8 +10,8 @@ export default async function (sock: any, msg: any, extra: any) {
     const chatId = msg.from || msg.chat || extra?.chat;
 
     try {
-        const metadata = extra?.groupMetadata || await sock.groupMetadata(chatId).catch(() => null);
-        
+        const metadata = await sock.groupMetadata(chatId);
+
         if (metadata?.announce) {
             return msg.reply('✧ El grupo ya estaba *cerrado.*');
         }
@@ -22,9 +22,9 @@ export default async function (sock: any, msg: any, extra: any) {
     } catch (error: any) {
         console.error('[CLOSE ERROR]:', error);
 
-        await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
-
         if (error?.output?.statusCode === 401 || error?.output?.statusCode === 500 || error?.data === 401) {
+            await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
+
             const rawBotJid = sock.user?.id || '';
             const botNum = rawBotJid.split(':')[0].split('@')[0];
             const botJid = `${botNum}@s.whatsapp.net`;
