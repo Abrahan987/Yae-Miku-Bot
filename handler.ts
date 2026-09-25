@@ -85,7 +85,7 @@ async function getGroupMetadata(sock: any, chatId: string): Promise<any> {
 }
 
 function extractCommandInfo(text: string): { cleanCmd: string; usedPrefix: string } | null {
-    const prefixes = (global as any).prefix;
+    const prefixes = (global as any).prefix || '.';
     let usedPrefix = '';
 
     if (Array.isArray(prefixes)) {
@@ -183,16 +183,23 @@ async function executeCommand(
                       adminSet.has(rawParticipant) || 
                       adminSet.has(msgSender);
 
-            const rawBotJid = sock.user?.id || (sock.user as any)?.jid || '';
-            const botBase = normalizeNumber(rawBotJid);
+            // CORRECCIÓN: Limpieza precisa de id de dispositivo y soporte LID para el Bot
+            const rawBotId = sock.user?.id || (sock.user as any)?.jid || '';
+            const rawBotLid = (sock.user as any)?.lid || '';
+
+            const cleanBotJid = rawBotId.split(':')[0].split('@')[0];
+            const botBase = normalizeNumber(cleanBotJid);
             const altBot = botBase.startsWith('521') 
                 ? botBase.replace(/^521/, '52') 
                 : (botBase.startsWith('52') ? botBase.replace(/^52/, '521') : botBase);
 
+            const cleanBotLid = rawBotLid ? normalizeNumber(rawBotLid) : '';
+
             isBotAdmin = adminSet.has(botBase) || 
                          adminSet.has(altBot) || 
                          adminSet.has(stripMexOne(botBase)) || 
-                         adminSet.has(rawBotJid);
+                         adminSet.has(rawBotId) ||
+                         (cleanBotLid ? adminSet.has(cleanBotLid) : false);
         } catch {}
     }
 
