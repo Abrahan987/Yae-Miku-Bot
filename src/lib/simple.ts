@@ -23,7 +23,7 @@ export const decodeJid = (jid: any): string => {
     if (!jid || typeof jid !== 'string') return '';
     if (jid.includes(':')) {
         const decoded = jidDecode(jid);
-        return decoded?.user && decoded?.server ? `${decoded.user}@${decoded.server}` : jid;
+        return decoded?.user && decoded?.server ? `${decoded.user}@${decoded.server}` : jid.split(':')[0] + '@' + (jid.split('@')[1] || 's.whatsapp.net');
     }
     return jid;
 };
@@ -68,12 +68,14 @@ export const UserJid = (sock: any, chat?: string, jid?: string): string => {
     const targetJid = jid || chat;
     if (!targetJid || typeof targetJid !== 'string') return '';
 
-    if (targetJid.endsWith('@s.whatsapp.net') || targetJid.endsWith('@g.us')) {
-        return targetJid;
+    const cleanJid = decodeJid(targetJid);
+
+    if (cleanJid.endsWith('@s.whatsapp.net') || cleanJid.endsWith('@g.us')) {
+        return cleanJid;
     }
 
-    const lidMatch = targetJid.match(/^([^@]+)@lid$/);
-    if (!lidMatch) return targetJid;
+    const lidMatch = cleanJid.match(/^([^@:]+)(?::\d+)?@lid$/);
+    if (!lidMatch) return cleanJid;
 
     const lidNumber = lidMatch[1];
 
@@ -92,8 +94,7 @@ export const UserJid = (sock: any, chat?: string, jid?: string): string => {
         } catch (err) {}
     }
 
-    const sessionDir = path.join(process.cwd(), 'Session');
-    const mappingFile = path.join(sessionDir, `lid-mapping-${lidNumber}_reverse.json`);
+    const mappingFile = path.join(sessionDirConfig, `lid-mapping-${lidNumber}_reverse.json`);
 
     try {
         if (fs.existsSync(mappingFile)) {
@@ -106,7 +107,7 @@ export const UserJid = (sock: any, chat?: string, jid?: string): string => {
         }
     } catch (err) {}
 
-    return targetJid;
+    return cleanJid;
 };
 
 function processQuotedMessage(sock: any, chatJid: string, contextInfo: any): any {
@@ -126,12 +127,14 @@ function processQuotedMessage(sock: any, chatJid: string, contextInfo: any): any
         const quotedParticipant = decodeJid(contextInfo.participant || '');
         const resolvedParticipant = UserJid(sock, chatJid, quotedParticipant);
 
+        const botJid = decodeJid(sock.user?.id || '');
+
         return {
             type: quotedType,
             msg: quotedMsg,
             key: {
                 remoteJid: chatJid,
-                fromMe: quotedParticipant === sock.user?.id,
+                fromMe: quotedParticipant === botJid,
                 id: contextInfo.stanzaId,
                 participant: resolvedParticipant
             },
