@@ -35,9 +35,10 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                     q: query,
                     key: global.key
                 },
-                timeout: 60000,
+                timeout: 90000,
                 headers: {
-                    Accept: 'application/json'
+                    Accept: 'application/json',
+                    'User-Agent': 'Mozilla/5.0'
                 }
             }
         );
@@ -50,7 +51,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             data.data.length === 0
         ) {
             throw new Error(
-                data?.message || 'No se encontraron resultados.'
+                data?.message || 'La búsqueda no devolvió resultados.'
             );
         }
 
@@ -59,24 +60,64 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         );
 
         if (!result) {
-            throw new Error('No se encontró una imagen válida.');
+            throw new Error('Los resultados no contienen imágenes.');
         }
 
-        const imageUrl = result.hd || result.mini;
+        const imageUrls = [
+            result.hd,
+            result.mini
+        ].filter(Boolean);
+
+        let imageBuffer: Buffer | null = null;
+
+        for (const imageUrl of imageUrls) {
+            try {
+                const imageResponse = await axios.get(imageUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 120000,
+                    maxContentLength: 25 * 1024 * 1024,
+                    maxBodyLength: 25 * 1024 * 1024,
+                    maxRedirects: 10,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+                        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                        Referer: 'https://www.pinterest.com/'
+                    }
+                });
+
+                const buffer = Buffer.from(imageResponse.data);
+
+                if (buffer.length > 0) {
+                    imageBuffer = buffer;
+                    break;
+                }
+            } catch (error: any) {
+                console.error(
+                    '[PINTEREST IMAGE]',
+                    imageUrl,
+                    error?.response?.status || error?.message || error
+                );
+            }
+        }
+
+        if (!imageBuffer) {
+            throw new Error('No fue posible descargar ninguna imagen.');
+        }
+
+        const formatNumber = (value: any) =>
+            new Intl.NumberFormat('es-CO').format(Number(value || 0));
 
         await sock.sendMessage(
             msg.from,
             {
-                image: {
-                    url: imageUrl
-                },
+                image: imageBuffer,
                 caption:
                     `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃\n\n` +
                     `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${result.title || '𝚂𝙸𝙽 𝚃Í𝚃𝚄𝙻𝙾'}\n` +
                     `🍥 𝙰𝚄𝚃𝙾𝚁 ── ${result.full_name || '𝙳𝙴𝚂𝙲𝙾𝙽𝙾𝙲𝙸𝙳𝙾'}\n` +
                     `> 𝚄𝚂𝚄𝙰𝚁𝙸𝙾 ── @${result.username || '𝙳𝙴𝚂𝙲𝙾𝙽𝙾𝙲𝙸𝙳𝙾'}\n` +
-                    `> 𝙻𝙸𝙺𝙴𝚂 ── ${new Intl.NumberFormat('es-CO').format(Number(result.likes || 0))}\n` +
-                    `> 𝚂𝙴𝙶𝚄𝙸𝙳𝙾𝚁𝙴𝚂 ── ${new Intl.NumberFormat('es-CO').format(Number(result.followers || 0))}\n\n` +
+                    `> 𝙻𝙸𝙺𝙴𝚂 ── ${formatNumber(result.likes)}\n` +
+                    `> 𝚂𝙴𝙶𝚄𝙸𝙳𝙾𝚁𝙴𝚂 ── ${formatNumber(result.followers)}\n\n` +
                     `ꨄ︎ ${global.nmcreador}`
             },
             {
@@ -86,7 +127,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     } catch (error: any) {
         console.error(
             '[PINTEREST]',
-            error?.response?.status,
+            error?.response?.status || '',
             error?.response?.data || error?.message || error
         );
 
