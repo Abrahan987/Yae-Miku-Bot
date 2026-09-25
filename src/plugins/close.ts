@@ -10,6 +10,7 @@ export default async function (sock: any, msg: any, extra: any) {
     }
 
     const chatId = msg.from || msg.chat || extra?.chat;
+    const botJid = sock.user?.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : '';
 
     try {
         await sock.groupMetadata(chatId).catch(() => null);
@@ -19,7 +20,13 @@ export default async function (sock: any, msg: any, extra: any) {
         console.error('[CLOSE ERROR]:', error);
         
         if (error?.output?.statusCode === 401 || error?.output?.statusCode === 500 || error?.data === 401) {
-            return msg.reply('No se pudo cerrar el grupo. Quita los permisos de administrador al bot y vuelve a dárselos para resincronizar el servidor.');
+            const botNum = botJid ? botJid.split('@')[0] : '';
+            const replyText = `✧ @${botNum} debe ser administrador del grupo para poder cerrarlo.`;
+
+            return sock.sendMessage(chatId, {
+                text: replyText,
+                mentions: botJid ? [botJid] : []
+            }, { quoted: msg });
         }
 
         await msg.reply('Ocurrió un error al intentar cerrar el grupo.');
