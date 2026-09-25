@@ -1,31 +1,45 @@
 import axios from 'axios';
 
-export const command = ['pinterest', 'pin', 'pinterestdl'];
+export const command = ['pinterest', 'pin'];
 export const category = 'descargas';
-export const description = 'Busca 5 imágenes de Pinterest y las envía en álbum.';
+export const description = 'Busca imágenes en Pinterest y las envía en un álbum.';
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
-    const query = extra.args.join(' ').trim();
+    const text = extra?.text || extra?.args?.join(' ') || '';
 
-    if (!query) {
-        return msg.reply(
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃\n\n` +
-            `🪷 𝙸𝙽𝙶𝚁𝙴𝚂𝙰 𝚄𝙽 𝚃É𝚁𝙼𝙸𝙽𝙾 𝙳𝙴 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰\n\n` +
-            `🍥 𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
-            `> ${global.prefix[0]}𝚙𝚒𝚗𝚝𝚎𝚛𝚎𝚜𝚝 rizadas`
+    if (!text.trim()) {
+        return await sock.sendMessage(
+            msg.from,
+            {
+                text: `${global.namebot}
+
+🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃
+
+🪷 𝙴𝙹𝙴𝙼𝙿𝙻𝙾
+> ${global.prefix[0]}pinterest rizadas
+
+ꨄ︎ ${global.nmcreador}`
+            },
+            { quoted: msg }
         );
     }
 
+    const query = text.trim();
+
     try {
-        await msg.reply(
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃\n\n` +
-            `🪷 𝙱𝚄𝚂𝙲𝙰𝙽𝙳𝙾 𝙸𝙼Á𝙶𝙴𝙽𝙴𝚂...`
+        await sock.sendMessage(
+            msg.from,
+            {
+                text: `${global.namebot}
+
+🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃
+
+🪷 𝙱𝚄𝚂𝙲𝙰𝙽𝙳𝙾 𝙸𝙼Á𝙶𝙴𝙽𝙴𝚂...
+> 𝚀𝚄𝙴𝚁𝚈 ── ${query}
+
+ꨄ︎ ${global.nmcreador}`
+            },
+            { quoted: msg }
         );
 
         const response = await axios.get(
@@ -35,58 +49,101 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                     query,
                     key: global.key
                 },
-                timeout: 90000,
-                headers: {
-                    Accept: 'application/json',
-                    'User-Agent': 'Mozilla/5.0'
-                }
+                timeout: 60000
             }
         );
 
-        const data = response.data;
+        if (!response.data?.status || !Array.isArray(response.data?.data)) {
+            return await sock.sendMessage(
+                msg.from,
+                {
+                    text: `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃
 
-        if (
-            data?.status !== true ||
-            !Array.isArray(data?.data) ||
-            data.data.length === 0
-        ) {
-            throw new Error(
-                data?.message || 'No se encontraron resultados.'
+🪷 𝙽𝙾 𝚂𝙴 𝙴𝙽𝙲𝙾𝙽𝚃𝚁𝙰𝚁𝙾𝙽 𝚁𝙴𝚂𝚄𝙻𝚃𝙰𝙳𝙾𝚂.
+
+ꨄ︎ ${global.nmcreador}`
+                },
+                { quoted: msg }
             );
         }
 
-        const results = data.data
+        const results = response.data.data
             .filter((item: any) => item?.hd || item?.mini)
             .slice(0, 5);
 
-        if (results.length === 0) {
-            throw new Error('No hay imágenes disponibles.');
+        if (!results.length) {
+            return await sock.sendMessage(
+                msg.from,
+                {
+                    text: `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃
+
+🪷 𝙽𝙾 𝙷𝙰𝚈 𝙸𝙼Á𝙶𝙴𝙽𝙴𝚂 𝙳𝙸𝚂𝙿𝙾𝙽𝙸𝙱𝙻𝙴𝚂.
+
+ꨄ︎ ${global.nmcreador}`
+                },
+                { quoted: msg }
+            );
         }
 
-        const album = results.map((item: any) => ({
-            image: {
-                url: item.hd || item.mini
-            }
-        }));
+        const images = [];
+
+        for (const item of results) {
+            const imageUrl = item.hd || item.mini;
+
+            try {
+                const image = await axios.get(imageUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 30000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0'
+                    }
+                });
+
+                images.push({
+                    image: Buffer.from(image.data)
+                });
+            } catch {}
+        }
+
+        if (!images.length) {
+            return await sock.sendMessage(
+                msg.from,
+                {
+                    text: `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃
+
+🪷 𝙽𝙾 𝚂𝙴 𝙿𝚄𝙳𝙸𝙴𝚁𝙾𝙽 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝚁 𝙻𝙰𝚂 𝙸𝙼Á𝙶𝙴𝙽𝙴𝚂.
+
+ꨄ︎ ${global.nmcreador}`
+                },
+                { quoted: msg }
+            );
+        }
 
         await sock.sendMessage(
             msg.from,
             {
-                album
+                album: images
             },
             {
                 quoted: msg
             }
         );
-    } catch (error: any) {
-        console.error(
-            '[PINTEREST]',
-            error?.response?.status || '',
-            error?.response?.data || error?.message || error
-        );
 
-        await msg.reply(
-            `⚠︎ 𝙽𝙾 𝚂𝙴 𝙿𝚄𝙳𝙸𝙴𝚁𝙾𝙽 𝙴𝙽𝚅𝙸𝙰𝚁 𝙻𝙰𝚂 𝙸𝙼Á𝙶𝙴𝙽𝙴𝚂`
+    } catch (error) {
+        console.error('ERROR PINTEREST:', error);
+
+        await sock.sendMessage(
+            msg.from,
+            {
+                text: `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃
+
+🪷 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁.
+
+> ${error instanceof Error ? error.message : String(error)}
+
+ꨄ︎ ${global.nmcreador}`
+            },
+            { quoted: msg }
         );
     }
 }
