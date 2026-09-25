@@ -1,110 +1,228 @@
+// Clean lid by Ryuzei-Ts
+import fs from 'fs';
+import path from 'path';
+import { proto, getContentType, jidDecode, downloadContentFromMessage } from '@whiskeysockets/baileys';
 
-import { proto, jidNormalizedUser } from '@whiskeysockets/baileys';
-import type { WASocket } from '@whiskeysockets/baileys';
-export interface SerializedMessage {
-    id: string;
-    key: proto.IMessageKey;
-    from: string;
-    sender: string;
-    isGroup: boolean;
-    fromMe: boolean;
-    pushName: string;
-    body: string;
-    message: proto.IMessage;
-    type: string;
-    mentionedJid: string[];
-    isQuoted: boolean;
-    quoted: SerializedQuoted | null;
-    reply: (text: string) => Promise<proto.IWebMessageInfo | undefined>;
+const sessionDirConfig = path.join(process.cwd(), 'Session');
+const maxLidCacheSize = 5000;
+
+export const lidCache = new Map<string, string>();
+
+function setLidCache(lid: string, jid: string): void {
+    if (lidCache.size >= maxLidCacheSize) {
+        const firstKey = lidCache.keys().next().value;
+        if (firstKey) lidCache.delete(firstKey);
+    }
+    lidCache.set(lid, jid);
 }
 
-export interface SerializedQuoted {
-    id: string;
-    sender: string;
-    message: proto.IMessage;
-    type: string;
-    body: string;
-    mentionedJid: string[];
+const messageCache = new WeakMap<object, any>();
+const contentTypeCache = new WeakMap<object, string | undefined>();
+
+export const decodeJid = (jid: any): string => {
+    if (!jid || typeof jid !== 'string') return '';
+    if (jid.includes(':')) {
+        const decoded = jidDecode(jid);
+        return decoded?.user && decoded?.server ? `${decoded.user}@${decoded.server}` : jid;
+    }
+    return jid;
+};
+
+function getCachedContentType(rawMsg: any): string | undefined {
+    if (!rawMsg || typeof rawMsg !== 'object') return undefined;
+    if (contentTypeCache.has(rawMsg)) {
+        return contentTypeCache.get(rawMsg);
+    }
+    const type = getContentType(rawMsg);
+    contentTypeCache.set(rawMsg, type);
+    return type;
 }
 
-export function serialize(sock: WASocket, rawMsg: proto.IWebMessageInfo): SerializedMessage | null {
-    if (!rawMsg || !rawMsg.key) return null;
+function unwrapMessage(message: any): any {
+    if (!message || typeof message !== 'object') return message;
+    let raw = message;
 
-    const key = rawMsg.key;
-    const from = key.remoteJid || '';
-    const isGroup = from.endsWith('@g.us');
-    const fromMe = key.fromMe || false;
+    if (raw.ephemeralMessage) raw = raw.ephemeralMessage.message;
+    if (raw.viewOnceMessage) raw = raw.viewOnceMessage.message;
+    if (raw.viewOnceMessageV2) raw = raw.viewOnceMessageV2.message;
+    if (raw.viewOnceMessageV2Extension) raw = raw.viewOnceMessageV2Extension.message;
+    if (raw.documentWithCaptionMessage) raw = raw.documentWithCaptionMessage.message;
 
-    let sender = fromMe
-        ? sock.user?.id || ''
-        : isGroup
-        ? key.participant || ''
-        : from;
+    return raw;
+}
 
-    sender = jidNormalizedUser(sender);
+function extractMessageBody(rawMsg: any, msgContent: any): string {
+    if (!rawMsg) return '';
+    return (
+        rawMsg.conversation ||
+        msgContent?.text ||
+        msgContent?.caption ||
+        msgContent?.selectedButtonId ||
+        msgContent?.singleSelectReply?.selectedRowId ||
+        msgContent?.selectedId ||
+        ''
+    );
+}
 
-    const message = rawMsg.message?.ephemeralMessage?.message || rawMsg.message || {};
-    const type = Object.keys(message)[0] || '';
+export const UserJid = (sock: any, chat?: string, jid?: string): string => {
+    const targetJid = jid || chat;
+    if (!targetJid || typeof targetJid !== 'string') return '';
 
-    let body = '';
-    if (type === 'conversation') {
-        body = message.conversation || '';
-    } else if (type === 'extendedTextMessage') {
-        body = message.extendedTextMessage?.text || '';
-    } else if (type === 'imageMessage') {
-        body = message.imageMessage?.caption || '';
-    } else if (type === 'videoMessage') {
-        body = message.videoMessage?.caption || '';
-    } else if (type === 'buttonsResponseMessage') {
-        body = message.buttonsResponseMessage?.selectedButtonId || '';
-    } else if (type === 'listResponseMessage') {
-        body = message.listResponseMessage?.singleSelectReply?.selectedRowId || '';
-    } else if (type === 'templateButtonReplyMessage') {
-        body = message.templateButtonReplyMessage?.selectedId || '';
+    if (targetJid.endsWith('@s.whatsapp.net') || targetJid.endsWith('@g.us')) {
+        return targetJid;
     }
 
-    const contextInfo = message[type as keyof proto.IMessage]?.contextInfo;
-    const mentionedJid = contextInfo?.mentionedJid || [];
+    const lidMatch = targetJid.match(/^([^@]+)@lid$/);
+    if (!lidMatch) return targetJid;
 
-    let quoted: SerializedQuoted | null = null;
-    if (contextInfo?.quotedMessage) {
-        const qMsg = contextInfo.quotedMessage;
-        const qType = Object.keys(qMsg)[0] || '';
-        let qBody = '';
+    const lidNumber = lidMatch[1];
 
-        if (qType === 'conversation') qBody = qMsg.conversation || '';
-        else if (qType === 'extendedTextMessage') qBody = qMsg.extendedTextMessage?.text || '';
-        else if (qType === 'imageMessage') qBody = qMsg.imageMessage?.caption || '';
-        else if (qType === 'videoMessage') qBody = qMsg.videoMessage?.caption || '';
+    if (lidCache.has(lidNumber)) {
+        return lidCache.get(lidNumber)!;
+    }
 
-        quoted = {
-            id: contextInfo.stanzaId || '',
-            sender: jidNormalizedUser(contextInfo.participant || ''),
-            message: qMsg,
-            type: qType,
-            body: qBody,
-            mentionedJid: qMsg[qType as keyof proto.IMessage]?.contextInfo?.mentionedJid || []
+    if (sock?.signalRepository?.lidMapping) {
+        try {
+            const cachedPn = sock.signalRepository.lidMapping.mappingCache?.get(`lid:${lidNumber}`);
+            if (cachedPn) {
+                const resolvedJid = `${cachedPn}@s.whatsapp.net`;
+                setLidCache(lidNumber, resolvedJid);
+                return resolvedJid;
+            }
+        } catch (err) {}
+    }
+
+    const sessionDir = path.join(process.cwd(), 'Session');
+    const mappingFile = path.join(sessionDir, `lid-mapping-${lidNumber}_reverse.json`);
+
+    try {
+        if (fs.existsSync(mappingFile)) {
+            const phoneStr = JSON.parse(fs.readFileSync(mappingFile, 'utf-8'));
+            if (phoneStr) {
+                const resolvedJid = `${phoneStr}@s.whatsapp.net`;
+                setLidCache(lidNumber, resolvedJid);
+                return resolvedJid;
+            }
+        }
+    } catch (err) {}
+
+    return targetJid;
+};
+
+function processQuotedMessage(sock: any, chatJid: string, contextInfo: any): any {
+    if (!contextInfo?.quotedMessage) return null;
+
+    try {
+        const quotedRaw = unwrapMessage(contextInfo.quotedMessage);
+        const quotedType = getCachedContentType(quotedRaw);
+        const quotedMsg = quotedType ? quotedRaw[quotedType] : null;
+
+        const quotedBody = 
+            quotedRaw?.conversation ||
+            quotedMsg?.text ||
+            quotedMsg?.caption ||
+            '';
+
+        const quotedParticipant = decodeJid(contextInfo.participant || '');
+        const resolvedParticipant = UserJid(sock, chatJid, quotedParticipant);
+
+        return {
+            type: quotedType,
+            msg: quotedMsg,
+            key: {
+                remoteJid: chatJid,
+                fromMe: quotedParticipant === sock.user?.id,
+                id: contextInfo.stanzaId,
+                participant: resolvedParticipant
+            },
+            sender: resolvedParticipant,
+            body: quotedBody,
+            mentionedJid: contextInfo.mentionedJid || []
         };
+    } catch (error) {
+        console.error('[SERIALIZE ERROR]:', error);
+        return null;
+    }
+}
+
+export function serialize(sock: any, m: proto.IWebMessageInfo): any {
+    if (!m || typeof m !== 'object' || !m.message) {
+        return null;
     }
 
-    const reply = async (text: string) => {
-        return sock.sendMessage(from, { text }, { quoted: rawMsg });
-    };
+    if (messageCache.has(m)) {
+        return messageCache.get(m);
+    }
 
-    return {
-        id: key.id || '',
-        key,
-        from,
-        sender,
-        isGroup,
-        fromMe,
-        pushName: rawMsg.pushName || 'Usuario',
-        body,
-        message,
-        type,
-        mentionedJid,
-        isQuoted: !!quoted,
-        quoted,
-        reply
-    };
+    try {
+        const rawMsg = unwrapMessage(m.message);
+        const msgType = getCachedContentType(rawMsg);
+        
+        if (!msgType) return null;
+
+        const msg = rawMsg[msgType];
+        const body = extractMessageBody(rawMsg, msg);
+
+        const key = m.key || {};
+        const remoteJid = decodeJid(key.remoteJid || '');
+        
+        const chat = UserJid(sock, remoteJid);
+        const rawSender = decodeJid(key.participant || remoteJid);
+        const sender = UserJid(sock, chat, rawSender);
+
+        const isGroup = chat.endsWith('@g.us');
+        const isBot = !!key.fromMe;
+
+        const contextInfo = msg?.contextInfo || rawMsg?.contextInfo;
+        const quoted = processQuotedMessage(sock, chat, contextInfo);
+        const mentionedJid = contextInfo?.mentionedJid || [];
+
+        const result = {
+            ...m,
+            type: msgType,
+            body,
+            chat,
+            sender,
+            from: chat,
+            isGroup,
+            isBot,
+            quoted,
+            mentionedJid,
+            pushName: m.pushName || 'Usuario',
+            reply: (text: string) => {
+                if (!chat) {
+                    console.error('[SERIALIZE ERROR]: Chat JID missing');
+                    return Promise.reject(new Error('Chat JID missing'));
+                }
+                return sock.sendMessage(chat, { text }, { quoted: m });
+            },
+            download: async (): Promise<Buffer | null> => {
+                const media = msg;
+                if (!media) return null;
+
+                try {
+                    const stream = await downloadContentFromMessage(
+                        media as any,
+                        msgType.replace('Message', '') as any
+                    );
+
+                    const chunks: Buffer[] = [];
+                    for await (const chunk of stream) {
+                        chunks.push(chunk);
+                    }
+                    return Buffer.concat(chunks);
+                } catch (downloadError) {
+                    console.error('[SERIALIZE ERROR]:', downloadError);
+                    return null;
+                }
+            }
+        };
+
+        messageCache.set(m, result);
+        return result;
+
+    } catch (error) {
+        console.error('[SERIALIZE ERROR]:', error);
+        return null;
+    }
 }
