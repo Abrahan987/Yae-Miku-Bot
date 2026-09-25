@@ -189,16 +189,22 @@ async function executeCommand(
                 ? botBase.replace(/^521/, '52') 
                 : (botBase.startsWith('52') ? botBase.replace(/^52/, '521') : botBase);
 
-            isBotAdmin = adminSet.has(botBase) || adminSet.has(altBot) || adminSet.has(stripMexOne(botBase)) || adminSet.has(rawBotJid);
+            isBotAdmin = adminSet.has(botBase) || 
+                         adminSet.has(altBot) || 
+                         adminSet.has(stripMexOne(botBase)) || 
+                         adminSet.has(rawBotJid);
         } catch {}
     }
 
     const pluginObj = (runFn as any)?.plugin || runFn;
-    if (pluginObj?.admin && !isAdmin) {
-        return msg.reply('ׅ  ׄ  ✿ Necesitas ser administrador del grupo para usar este comando.');
+    const reqAdmin = pluginObj?.admin || (runFn as any)?.admin;
+    const reqBotAdmin = pluginObj?.botAdmin || (runFn as any)?.botAdmin || pluginObj?.botadmin || (runFn as any)?.botadmin;
+
+    if (reqAdmin && !isAdmin) {
+        return msg.reply('Necesitas ser administrador del grupo para usar este comando.');
     }
-    if (pluginObj?.botAdmin && !isBotAdmin) {
-        return msg.reply('ׅ  ׄ  ✿ El bot necesita ser administrador del grupo para ejecutar este comando.');
+    if (reqBotAdmin && !isBotAdmin) {
+        return msg.reply('El bot necesita ser administrador del grupo para ejecutar este comando.');
     }
 
     const dbHelpers = {
