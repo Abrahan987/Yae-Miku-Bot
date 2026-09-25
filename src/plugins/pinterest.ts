@@ -2,7 +2,7 @@ import axios from 'axios';
 
 export const command = ['pinterest', 'pin'];
 export const category = 'descargas';
-export const description = 'Busca imágenes en Pinterest y las envía en un álbum.';
+export const description = 'Busca imágenes en Pinterest y las envía.';
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const text = extra?.text || extra?.args?.join(' ') || '';
@@ -85,7 +85,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             );
         }
 
-        const images = [];
+        let enviados = 0;
 
         for (const item of results) {
             const imageUrl = item.hd || item.mini;
@@ -99,35 +99,35 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                     }
                 });
 
-                images.push({
-                    image: Buffer.from(image.data)
-                });
-            } catch {}
+                await sock.sendMessage(
+                    msg.from,
+                    {
+                        image: Buffer.from(image.data)
+                    },
+                    {
+                        quoted: msg
+                    }
+                );
+
+                enviados++;
+            } catch (error) {
+                console.error(`ERROR IMAGEN PINTEREST ${enviados + 1}:`, error);
+            }
         }
 
-        if (!images.length) {
-            return await sock.sendMessage(
+        if (!enviados) {
+            await sock.sendMessage(
                 msg.from,
                 {
                     text: `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃
 
-🪷 𝙽𝙾 𝚂𝙴 𝙿𝚄𝙳𝙸𝙴𝚁𝙾𝙽 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝚁 𝙻𝙰𝚂 𝙸𝙼Á𝙶𝙴𝙽𝙴𝚂.
+🪷 𝙽𝙾 𝚂𝙴 𝙿𝚄𝙳𝙸𝙴𝚁𝙾𝙽 𝙴𝙽𝚅𝙸𝙰𝚁 𝙻𝙰𝚂 𝙸𝙼Á𝙶𝙴𝙽𝙴𝚂.
 
 ꨄ︎ ${global.nmcreador}`
                 },
                 { quoted: msg }
             );
         }
-
-        await sock.sendMessage(
-            msg.from,
-            {
-                album: images
-            },
-            {
-                quoted: msg
-            }
-        );
 
     } catch (error) {
         console.error('ERROR PINTEREST:', error);
@@ -138,8 +138,6 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                 text: `🍓͜ᩧ𑂳ᰍ  𝙿𝙸𝙽𝚃𝙴𝚁𝙴𝚂𝚃
 
 🪷 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁.
-
-> ${error instanceof Error ? error.message : String(error)}
 
 ꨄ︎ ${global.nmcreador}`
             },
