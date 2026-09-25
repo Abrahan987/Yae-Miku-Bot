@@ -9,10 +9,8 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
     if (!url) {
         return msg.reply(
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `𖫨𖫨🪷⃨᪲  𝚃𝙸𝙺𝚃𝙾𝙺\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝙴𝙽𝚅Í𝙰 𝙴𝙻 𝙴𝙽𝙻𝙰𝙲𝙴 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾\n\n` +
+            `🍓 𝚃𝙸𝙺𝚃𝙾𝙺\n\n` +
+            `𝙴𝙽𝚅Í𝙰 𝙴𝙻 𝙴𝙽𝙻𝙰𝙲𝙴 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾\n\n` +
             `🪷 𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
             `> ${global.prefix[0]}𝚝𝚒𝚔𝚝𝚘𝚔 https://vt.tiktok.com/...`
         );
@@ -25,11 +23,8 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     }
 
     try {
-        const searching = await msg.reply(
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `𖫨𖫨🪷⃨᪲  ${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝚃𝙸𝙺𝚃𝙾𝙺\n\n` +
+        await msg.reply(
+            `🍓 𝚃𝙸𝙺𝚃𝙾𝙺\n\n` +
             `🪷 𝙱𝚄𝚂𝙲𝙰𝙽𝙳𝙾 𝙸𝙽𝙵𝙾𝚁𝙼𝙰𝙲𝙸Ó𝙽...`
         );
 
@@ -77,12 +72,9 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         const formatNumber = (number: number) =>
             new Intl.NumberFormat('es-CO').format(number);
 
-        const information =
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `𖫨𖫨🪷⃨᪲  ${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
+        await msg.reply(
+            `🍓 𝚅Í𝙳𝙴𝙾\n\n` +
 
-            `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾\n\n` +
             `> 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
             `> 𝙰𝚄𝚃𝙾𝚁 ── ${nickname}\n` +
             `> 𝚄𝚂𝙴𝚁 ── @${uniqueId}\n` +
@@ -90,16 +82,15 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `> 𝚁𝙴𝙶𝙸Ó𝙽 ── ${region}\n` +
             `> 𝙵𝙴𝙲𝙷𝙰 ── ${createdAt}\n\n` +
 
-            `🪷͜ᩧ𑂳ᰍ  𝙴𝚂𝚃𝙰𝙳Í𝚂𝚃𝙸𝙲𝙰𝚂\n\n` +
+            `🪷 𝙴𝚂𝚃𝙰𝙳Í𝚂𝚃𝙸𝙲𝙰𝚂\n\n` +
             `> 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${formatNumber(plays)}\n` +
             `> 𝙻𝙸𝙺𝙴𝚂 ── ${formatNumber(likes)}\n` +
             `> 𝙲𝙾𝙼𝙴𝙽𝚃𝙰𝚁𝙸𝙾𝚂 ── ${formatNumber(comments)}\n` +
             `> 𝙲𝙾𝙼𝙿𝙰𝚁𝚃𝙸𝙳𝙾𝚂 ── ${formatNumber(shares)}\n` +
             `> 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝚂 ── ${formatNumber(downloads)}\n\n` +
 
-            `🍥͜ᩧ𑂳ᰍ  𝙿𝚁𝙴𝙿𝙰𝚁𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...`;
-
-        await msg.reply(information);
+            `🍥 𝙿𝚁𝙴𝙿𝙰𝚁𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...`
+        );
 
         const videoResponse = await axios.get(info.dl, {
             responseType: 'arraybuffer',
@@ -125,21 +116,25 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                 video: videoBuffer,
                 mimetype: 'video/mp4',
                 caption:
-                    `🍓͜ᩧ𑂳ᰍ  𝚅Í𝙳𝙴𝙾 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙳𝙾\n\n` +
+                    `🍓 𝚅Í𝙳𝙴𝙾 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙳𝙾\n\n` +
+
                     `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
-                    `🍥 𝙰𝚄𝚃𝙾𝚁 ── ${nickname}\n` +
-                    `> 𝙳𝚄𝚁𝙰𝙲𝙸Ó𝙽 ── ${duration}\n` +
+                    `> 𝙰𝚄𝚃𝙾𝚁 ── ${nickname}\n` +
+                    `> 𝚄𝚂𝙴𝚁 ── @${uniqueId}\n` +
+                    `> 𝙳𝚄𝚁𝙰𝙲𝙸Ó𝙽 ── ${duration}\n\n` +
+
                     `> 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${formatNumber(plays)}\n` +
                     `> 𝙻𝙸𝙺𝙴𝚂 ── ${formatNumber(likes)}\n` +
                     `> 𝙲𝙾𝙼𝙴𝙽𝚃𝙰𝚁𝙸𝙾𝚂 ── ${formatNumber(comments)}\n` +
-                    `> 𝙲𝙾𝙼𝙿𝙰𝚁𝚃𝙸𝙳𝙾𝚂 ── ${formatNumber(shares)}\n\n` +
-                    `ꨄ︎ ${global.nmcreador}`
+                    `> 𝙲𝙾𝙼𝙿𝙰𝚁𝚃𝙸𝙳𝙾𝚂 ── ${formatNumber(shares)}\n` +
+                    `> 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝚂 ── ${formatNumber(downloads)}\n\n` +
+
+                    `🍥 ${global.nmcreador}`
             },
             {
                 quoted: msg
             }
         );
-
     } catch (error: any) {
         console.error(
             '[TIKTOK]',
