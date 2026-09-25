@@ -12,6 +12,10 @@ export const owner = true;
 export default async function (sock: any, msg: any, extra: any) {
     const chatId = msg.from || msg.chat || extra?.chat;
 
+    if (!extra?.isOwner && !msg.isOwner) {
+        return msg.reply('𖥨 *Acceso denegado:* Este comando solo puede ser ejecutado por el *dueño* del bot.');
+    }
+
     try {
         const { stdout } = await execPromise('git pull');
         await loadPlugins();
@@ -22,6 +26,7 @@ export default async function (sock: any, msg: any, extra: any) {
         const text = isUpToDate
             ? '𖥨 *Sistema:* El bot ya está en su última versión.'
             : `𖥨 *Actualización completada:*
+
 \`\`\`${cleanOut}\`\`\``;
 
         await sock.sendMessage(chatId, { text }, { quoted: msg });
