@@ -5,30 +5,35 @@ export const admin = true;
 export const botAdmin = true;
 
 export default async function (sock: any, msg: any, extra: any) {
-    if (!msg.isGroup) {
-        return msg.reply('Necesitas estar en un grupo para usar este comando.');
-    }
+    if (!msg.isGroup) return;
 
     const chatId = msg.from || msg.chat || extra?.chat;
-    const botJid = sock.user?.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : '';
 
     try {
-        await sock.groupMetadata(chatId).catch(() => null);
-        await sock.groupSettingUpdate(chatId, 'announcement');
-        await msg.reply('Grupo cerrado. Ahora solo los administradores pueden enviar mensajes.');
-    } catch (error: any) {
-        console.error('[CLOSE ERROR]:', error);
+        const metadata = extra?.groupMetadata || await sock.groupMetadata(chatId).catch(() => null);
         
-        if (error?.output?.statusCode === 401 || error?.output?.statusCode === 500 || error?.data === 401) {
-            const botNum = botJid ? botJid.split('@')[0] : '';
-            const replyText = `✧ @${botNum} debe ser administrador del grupo para poder cerrarlo.`;
-
-            return sock.sendMessage(chatId, {
-                text: replyText,
-                mentions: botJid ? [botJid] : []
-            }, { quoted: msg });
+        if (metadata?.announce) {
+            return msg.reply('✧ El grupo ya estaba *cerrado.*');
         }
 
-        await msg.reply('Ocurrió un error al intentar cerrar el grupo.');
+        await sock.groupSettingUpdate(chatId, 'announcement');
+        await sock.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
+        return;
+    } catch (error: any) {
+        console.error('[CLOSE ERROR]:', error);
+
+        await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
+
+        if (error?.output?.statusCode === 401 || error?.output?.statusCode === 500 || error?.data === 401) {
+            const rawBotJid = sock.user?.id || '';
+            const botNum = rawBotJid.split(':')[0].split('@')[0];
+            const botJid = `${botNum}@s.whatsapp.net`;
+
+            return sock.sendMessage(chatId, {
+                text: `✧ @${botNum} debe ser administrador del grupo para poder cerrarlo.`,
+                mentions: [botJid]
+            }, { quoted: msg });
+        }
+        return;
     }
 }
