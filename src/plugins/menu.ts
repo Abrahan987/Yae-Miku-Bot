@@ -1,9 +1,12 @@
+import axios from 'axios';
+
 export const command = ['menu', 'help', 'comandos'];
 export const category = 'info';
 export const description = 'Muestra el menú principal con todos los comandos.';
 
-export default async function (sock: any, msg: any, extra: any) {
+export default async function (sock: any, msg: any, extra: any, db: any) {
     const pluginData = extra.pluginData;
+    const destination = global.rcanal || msg.from;
 
     const categoryConfig = [
         {
@@ -117,14 +120,11 @@ export default async function (sock: any, msg: any, extra: any) {
 
     const categoriesContent = blocks.join('\n\n');
 
-    const botName = global.namebot || 'YAE MIKU BOT';
-    const creator = global.nmcreador || '';
-
     const menuText =
 `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
 
-${botName}
-${creator}
+${global.namebot}
+${global.nmcreador}
 
 𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
 
@@ -137,24 +137,29 @@ ${categoriesContent}
 
 ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
 
-    const destination = global.rcanal || msg.from;
+    try {
+        const response = await axios.get(global.banner, {
+            responseType: 'arraybuffer',
+            timeout: 30000
+        });
 
-    if (global.banner) {
-        await sock.sendMessage(
-            destination,
-            {
-                image: {
-                    url: global.banner
-                },
-                caption: menuText
-            }
+        await sock.sendMessage(destination, {
+            image: Buffer.from(response.data),
+            mimetype: response.headers['content-type'] || 'image/jpeg'
+        });
+
+        await sock.sendMessage(destination, {
+            text: menuText
+        });
+
+    } catch (error: any) {
+        console.error(
+            '[MENU]',
+            error?.response?.data || error?.message || error
         );
-    } else {
-        await sock.sendMessage(
-            destination,
-            {
-                text: menuText
-            }
-        );
+
+        await sock.sendMessage(destination, {
+            text: menuText
+        });
     }
 }
