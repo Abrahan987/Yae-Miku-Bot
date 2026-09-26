@@ -5,9 +5,14 @@ export const category = 'herramientas';
 export const description = 'Combina dos emojis en uno.';
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
-    const args = extra.args || [];
-    const emoji1 = args[0];
-    const emoji2 = args[1];
+    const input = (extra.args || []).join(' ').trim();
+
+    const emojis = input
+        .split(/\s*\+\s*|\s+/)
+        .filter(Boolean);
+
+    const emoji1 = emojis[0];
+    const emoji2 = emojis[1];
 
     if (!emoji1 || !emoji2) {
         return msg.reply(
@@ -16,23 +21,14 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
             `🍓͜ᩧ𑂳ᰍ  𝙴𝙼𝙾𝙹𝙸𝙼𝙸𝚇\n\n` +
             `🪷 𝚄𝚂𝙾\n` +
-            `> ${global.prefix[0]}𝚎𝚖𝚘𝚓𝚒𝚖𝚒𝚡 😭 😂\n\n` +
+            `> ${global.prefix[0]}𝚖𝚒𝚡 👀+❤️\n\n` +
             `🍥 𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
-            `> ${global.prefix[0]}𝚎𝚖𝚘𝚓𝚒𝚖𝚒𝚡 🥰 😭\n\n` +
+            `> ${global.prefix[0]}𝚖𝚒𝚡 🥰+😭\n\n` +
             `ꨄ︎ ${global.nmcreador}`
         );
     }
 
     try {
-        await msg.reply(
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥 𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝙴𝙼𝙾𝙹𝙸𝙼𝙸𝚇\n\n` +
-            `🪷 𝙲𝙾𝙼𝙱𝙸𝙽𝙰𝙽𝙳𝙾 ── ${emoji1} + ${emoji2}\n\n` +
-            `ꨄ︎ ${global.nmcreador}`
-        );
-
         const response = await axios.get(
             'https://api.stellarwa.xyz/tools/emojimix',
             {
@@ -46,16 +42,17 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             }
         );
 
-        const contentType = response.headers['content-type'] || 'image/png';
-
         await sock.sendMessage(
             msg.from,
             {
                 image: Buffer.from(response.data),
-                mimetype: contentType,
+                mimetype: response.headers['content-type'] || 'image/png',
                 caption:
+                    `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
+                    `${global.namebot}\n` +
+                    `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
                     `🍓͜ᩧ𑂳ᰍ  𝙴𝙼𝙾𝙹𝙸𝙼𝙸𝚇\n\n` +
-                    `🪷 ${emoji1} + ${emoji2}\n\n` +
+                    `🪷 𝙲𝙾𝙼𝙱𝙸𝙽𝙰𝙲𝙸Ó𝙽 ── ${emoji1} + ${emoji2}\n\n` +
                     `ꨄ︎ ${global.nmcreador}`
             },
             {
@@ -69,7 +66,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         );
 
         await msg.reply(
-            `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙲𝙾𝙼𝙱𝙸𝙽𝙰𝚁 𝙴𝚂𝙾𝚂 𝙴𝙼𝙾𝙹𝙸𝚂`
+            `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙲𝙾𝙼𝙱𝙸𝙽𝙰𝚁 ${emoji1} + ${emoji2}`
         );
     }
 }
