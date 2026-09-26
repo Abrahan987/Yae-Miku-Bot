@@ -75,7 +75,6 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
         for (const item of items) {
             const limitedCmds = item.commands.slice(0, 2);
-
             const cmdsFormatted = limitedCmds
                 .map((c: string) => `.${c}`)
                 .join(' • ');
@@ -145,11 +144,8 @@ ${categoriesContent}
 
         await sock.sendMessage(destination, {
             image: Buffer.from(response.data),
-            mimetype: response.headers['content-type'] || 'image/jpeg'
-        });
-
-        await sock.sendMessage(destination, {
-            text: menuText
+            mimetype: response.headers['content-type'] || 'image/jpeg',
+            caption: menuText
         });
 
     } catch (error: any) {
@@ -158,8 +154,8 @@ ${categoriesContent}
             error?.response?.data || error?.message || error
         );
 
-        await sock.sendMessage(destination, {
-            text: menuText
-        });
+        await msg.reply(
+            `⚠︎ 𝙽𝙾 𝚂𝙴 𝙿𝚄𝙳𝙾 𝙴𝙽𝚅𝙸𝙰𝚁 𝙻𝙰 𝙸𝙼𝙰𝙶𝙴𝙽\n\n${error?.message || error}`
+        );
     }
 }
