@@ -1,5 +1,4 @@
-Xfavor también podés poner que trabaje con el nesletterw de WhatsApp osea el jid del canal ah y en el encabezado, caption podés poner como sub título el global.nmcreador o como se escriba
-
+Xfavor 
 export const command = ['menu', 'help', 'comandos'];
 export const category = 'info';
 export const description = 'Muestra el menú principal con todos los comandos.';
