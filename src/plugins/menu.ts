@@ -1,4 +1,4 @@
- export const command = ['menu', 'help', 'comandos'];
+export const command = ['menu', 'help', 'comandos'];
 export const category = 'info';
 export const description = 'Muestra el menú principal con todos los comandos.';
 
@@ -49,8 +49,10 @@ export default async function (sock: any, msg: any, extra: any) {
 
         const catList = groupedCategories.get(finalKey);
 
-        const existing = catList.find(item =>
-            item.commands.some(c => data.commands.includes(c))
+        const existing = catList.find((item: any) =>
+            item.commands.some((c: string) =>
+                data.commands.includes(c)
+            )
         );
 
         if (!existing) {
@@ -70,6 +72,7 @@ export default async function (sock: any, msg: any, extra: any) {
 
         for (const item of items) {
             const limitedCmds = item.commands.slice(0, 2);
+
             const cmdsFormatted = limitedCmds
                 .map((c: string) => `.${c}`)
                 .join(' • ');
@@ -82,7 +85,7 @@ export default async function (sock: any, msg: any, extra: any) {
     };
 
     const blocks: string[] = [];
-    const processedKeys = new Set();
+    const processedKeys = new Set<string>();
 
     for (const conf of categoryConfig) {
         const items = groupedCategories.get(conf.key);
@@ -120,10 +123,10 @@ export default async function (sock: any, msg: any, extra: any) {
     const menuText =
 `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
 
-𖫨𖫨🪷⃨᪲  ${botName.toUpperCase()}˙ᰨᰍ
-𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
-
+${botName}
 ${creator}
+
+𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
 
 🍓͜ᩧ𑂳ᰍ  𝗛𝗼𝗹𝗮, 𝗯𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼 𝗮𝗹
 𝗺𝗲𝗻𝘂́ 𝗽𝗿𝗶𝗻𝗰𝗶𝗽𝗮𝗹 𝗱𝗲𝗹 𝗯𝗼𝘁.
@@ -134,16 +137,14 @@ ${categoriesContent}
 
 ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
 
-    const destination =
-        global.rcanal ||
-        msg.from;
+    const destination = global.rcanal || msg.from;
 
-    if (global.icono) {
+    if (global.banner) {
         await sock.sendMessage(
             destination,
             {
                 image: {
-                    url: global.icono
+                    url: global.banner
                 },
                 caption: menuText
             }
