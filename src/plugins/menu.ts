@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { prepareWAMessageMedia } from '@whiskeysockets/baileys';
 
 export const command = ['menu', 'help', 'comandos'];
 export const category = 'info';
@@ -7,7 +6,6 @@ export const description = 'Muestra el menú principal con todos los comandos.';
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const pluginData = extra.pluginData;
-    const destination = global.rcanal || msg.from;
 
     const categoryConfig = [
         {
@@ -76,7 +74,6 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
         for (const item of items) {
             const limitedCmds = item.commands.slice(0, 2);
-
             const cmdsFormatted = limitedCmds
                 .map((c: string) => `.${c}`)
                 .join(' • ');
@@ -136,7 +133,11 @@ ${categoriesContent}
 
 𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
 
-ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
+ꨄ︎ ${global.nmcreador}`;
+
+    if (!global.rcanal) {
+        return msg.reply('⚠︎ 𝙽𝙾 𝙴𝚇𝙸𝚂𝚃𝙴 𝙶𝙻𝙾𝙱𝙰𝙻.𝚁𝙲𝙰𝙽𝙰𝙻');
+    }
 
     try {
         const response = await axios.get(global.banner, {
@@ -144,37 +145,24 @@ ${categoriesContent}
             timeout: 30000
         });
 
-        const media = await prepareWAMessageMedia(
+        await sock.sendMessage(
+            global.rcanal,
             {
-                image: Buffer.from(response.data)
-            },
-            {
-                upload: sock.waUploadToServer
+                image: Buffer.from(response.data),
+                mimetype: response.headers['content-type'] || 'image/jpeg'
             }
         );
 
-        const message = {
-            ...media,
-            imageMessage: {
-                ...media.imageMessage,
-                caption: menuText
+        await sock.sendMessage(
+            global.rcanal,
+            {
+                text: menuText
             }
-        };
-
-        const { proto } = await import('@whiskeysockets/baileys');
-
-        const waMessage = proto.Message.fromObject(message);
-
-        await sock.sendMessage(destination, {
-            image: waMessage.imageMessage?.jpegThumbnail
-                ? Buffer.from(waMessage.imageMessage.jpegThumbnail)
-                : Buffer.from(response.data),
-            caption: menuText
-        });
+        );
 
     } catch (error: any) {
         console.error(
-            '[MENU NEWSLETTER]',
+            '[MENU]',
             error?.stack || error?.response?.data || error?.message || error
         );
 
