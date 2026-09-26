@@ -27,7 +27,7 @@ export default async function (sock, msg, extra) {
         {
             key: 'herramientas',
             title: 'HERRAMIENTAS',
-            emoji: '🪷',
+            emoji: '🧰',
             aliases: ['herramientas', 'tools', 'utilidades']
         }
     ];
