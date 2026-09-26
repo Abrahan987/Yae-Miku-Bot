@@ -1,4 +1,4 @@
-import axios from 'axios';
+/*import axios from 'axios';
 
 export const command = ['emojimix', 'mixemoji', 'mix'];
 export const category = 'herramientas';
@@ -69,4 +69,4 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙲𝙾𝙼𝙱𝙸𝙽𝙰𝚁 ${emoji1} + ${emoji2}`
         );
     }
-}
+}*/
