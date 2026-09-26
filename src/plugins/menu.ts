@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { prepareWAMessageMedia } from '@whiskeysockets/baileys';
 
 export const command = ['menu', 'help', 'comandos'];
 export const category = 'info';
@@ -75,6 +76,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
         for (const item of items) {
             const limitedCmds = item.commands.slice(0, 2);
+
             const cmdsFormatted = limitedCmds
                 .map((c: string) => `.${c}`)
                 .join(' • ');
@@ -142,20 +144,42 @@ ${categoriesContent}
             timeout: 30000
         });
 
+        const media = await prepareWAMessageMedia(
+            {
+                image: Buffer.from(response.data)
+            },
+            {
+                upload: sock.waUploadToServer
+            }
+        );
+
+        const message = {
+            ...media,
+            imageMessage: {
+                ...media.imageMessage,
+                caption: menuText
+            }
+        };
+
+        const { proto } = await import('@whiskeysockets/baileys');
+
+        const waMessage = proto.Message.fromObject(message);
+
         await sock.sendMessage(destination, {
-            image: Buffer.from(response.data),
-            mimetype: response.headers['content-type'] || 'image/jpeg',
+            image: waMessage.imageMessage?.jpegThumbnail
+                ? Buffer.from(waMessage.imageMessage.jpegThumbnail)
+                : Buffer.from(response.data),
             caption: menuText
         });
 
     } catch (error: any) {
         console.error(
-            '[MENU]',
-            error?.response?.data || error?.message || error
+            '[MENU NEWSLETTER]',
+            error?.stack || error?.response?.data || error?.message || error
         );
 
         await msg.reply(
-            `⚠︎ 𝙽𝙾 𝚂𝙴 𝙿𝚄𝙳𝙾 𝙴𝙽𝚅𝙸𝙰𝚁 𝙻𝙰 𝙸𝙼𝙰𝙶𝙴𝙽\n\n${error?.message || error}`
+            `⚠︎ 𝙽𝙾 𝚂𝙴 𝙿𝚄𝙳𝙾 𝙴𝙽𝚅𝙸𝙰𝚁 𝙴𝙻 𝙼𝙴𝙽𝚄\n\n${error?.message || error}`
         );
     }
 }
