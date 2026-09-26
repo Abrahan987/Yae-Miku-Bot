@@ -119,4 +119,4 @@ ${categoriesContent}
     } else {
         await msg.reply(menuText);
     }
-}
+            }
