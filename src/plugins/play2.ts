@@ -1,4 +1,3 @@
-import axios from 'axios';
 import ytsearch from 'yt-search';
 
 export const command = ['play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'];
@@ -42,9 +41,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     const requestKey = text.toLowerCase();
 
     if (processing.has(requestKey)) {
-        return msg.reply(
-            `𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙴𝙽 𝙿𝚁𝙾𝙲𝙴𝚂𝙾 ❀`
-        );
+        return msg.reply(`𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙴𝙽 𝙿𝚁𝙾𝙲𝙴𝚂𝙾 ❀`);
     }
 
     processing.add(requestKey);
@@ -62,13 +59,9 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             }
         } else {
             const result = await ytsearch(text);
-
             if (!result.videos?.length) {
-                return msg.reply(
-                    `🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`
-                );
+                return msg.reply(`🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`);
             }
-
             searchData = result.videos[0];
             videoId = searchData.videoId || extractVideoId(searchData.url);
         }
@@ -78,16 +71,10 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         }
 
         const cleanUrl = `https://youtu.be/${videoId}`;
-
-        console.log('[PLAY2] videoId:', videoId);
-        console.log('[PLAY2] cleanUrl:', cleanUrl);
-
         const apiUrl = `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`;
 
-        console.log('[PLAY2] apiUrl:', apiUrl);
-
-        const response = await axios.get(apiUrl, { timeout: 60000 });
-        const data = response.data;
+        const response = await fetch(apiUrl);
+        const data: any = await response.json();
 
         if (!data?.status || !data?.data?.download) {
             return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
@@ -112,35 +99,33 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...\n\n` +
             `ꨄ︎ ${global.nmcreador}`;
 
-        if (imageUrl) {
-            try {
-                const image = await axios.get(imageUrl, {
-                    responseType: 'arraybuffer',
-                    timeout: 15000
-                });
-                await sock.sendMessage(
-                    msg.from,
-                    { image: Buffer.from(image.data), caption: infoText },
-                    { quoted: msg }
-                );
-            } catch {
-                await msg.reply(infoText);
-            }
+        const imagePromise = imageUrl
+            ? fetch(imageUrl).then(r => r.arrayBuffer()).then(b => Buffer.from(b)).catch(() => null)
+            : Promise.resolve(null);
+
+        const videoPromise = fetch(info.download)
+            .then(r => r.arrayBuffer())
+            .then(b => Buffer.from(b));
+
+        const imageBuffer = await imagePromise;
+
+        if (imageBuffer) {
+            await sock.sendMessage(
+                msg.from,
+                { image: imageBuffer, caption: infoText },
+                { quoted: msg }
+            );
         } else {
             await msg.reply(infoText);
         }
 
-        const video = await axios.get(info.download, {
-            responseType: 'arraybuffer',
-            timeout: 180000
-        });
-
+        const videoBuffer = await videoPromise;
         const fileName = `${cleanTitle(title)}.mp4`;
 
         await sock.sendMessage(
             msg.from,
             {
-                video: Buffer.from(video.data),
+                video: videoBuffer,
                 mimetype: 'video/mp4',
                 fileName,
                 caption: title
@@ -148,10 +133,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             { quoted: msg }
         );
     } catch (error: any) {
-        console.error(
-            '[PLAY2]',
-            error?.response?.data || error?.response?.status || error?.message || error
-        );
+        console.error('[PLAY2]', error?.message || error);
         await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸𝙾́ 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅𝙸́𝙳𝙴𝙾`);
     } finally {
         processing.delete(requestKey);
