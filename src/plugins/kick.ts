@@ -5,99 +5,65 @@ export const admin = true;
 export const botAdmin = true;
 
 export default async function (sock: any, msg: any, extra: any) {
-    if (!msg.isGroup) {
-        return msg.reply('🍓 𝙴𝚂𝚃𝙴 𝙲𝙾𝙼𝙰𝙽𝙳𝙾 𝚂𝙾𝙻𝙾 𝙵𝚄𝙽𝙲𝙸𝙾𝙽𝙰 𝙴𝙽 𝙶𝚁𝚄𝙿𝙾𝚂.');
-    }
+    if (!msg.isGroup) return;
 
     const chatId = msg.from || msg.chat || extra?.chat;
+    const args = extra?.args || [];
 
     try {
-        const metadata = await sock.groupMetadata(chatId);
-        const participants = metadata?.participants || [];
-
-        const botRawJid = sock.user?.id || '';
-        const botNumber = botRawJid.split(':')[0].split('@')[0];
-
-        const botParticipant = participants.find((p: any) => {
-            const id = p.id || '';
-            return id.split(':')[0].split('@')[0] === botNumber;
-        });
-
-        if (!botParticipant?.admin) {
-            return msg.reply(
-                `⚠︎ 𝙽𝙾 𝚂𝙾𝚈 𝙰𝙳𝙼𝙸𝙽\n\n` +
-                `🍥 𝙽𝙴𝙲𝙴𝚂𝙸𝚃𝙾 𝚂𝙴𝚁 𝙰𝙳𝙼𝙸𝙽 𝙿𝙰𝚁𝙰 𝙴𝙲𝙷𝙰𝚁 𝙰 𝙰𝙻𝙶𝚄𝙸𝙴𝙽.`
-            );
-        }
-
         const mentions = msg.mentionedJid || [];
 
-        let targetJid = mentions[0];
+        if (mentions.length === 0 && args.length === 0) {
+            return msg.reply('✧ Debes mencionar o responder a un mensaje del usuario que deseas expulsar.\n\nUso: *.kick @usuario* o responde al mensaje del usuario.');
+        }
 
+        let targetJid = mentions[0];
         if (!targetJid && msg.quoted) {
             targetJid = msg.quoted.sender;
         }
 
         if (!targetJid) {
-            return msg.reply(
-                `🍓 𝚄𝚂𝙾\n\n` +
-                `> ${global.prefix[0]}kick @usuario\n` +
-                `> Responde a su mensaje`
-            );
+            return msg.reply('✧ No se pudo identificar al usuario. Intenta mencionar a alguien o responde a su mensaje.');
         }
 
-        const targetParticipant = participants.find(
-            (p: any) => p.id === targetJid
-        );
+        const metadata = await sock.groupMetadata(chatId);
+        const participants = metadata?.participants || [];
 
+        const targetParticipant = participants.find((p: any) => p.id === targetJid);
         if (!targetParticipant) {
-            return msg.reply(
-                '⚠︎ 𝙴𝙻 𝚄𝚂𝚄𝙰𝚁𝙸𝙾 𝙽𝙾 𝙴𝚂𝚃𝙰́ 𝙴𝙽 𝙴𝙻 𝙶𝚁𝚄𝙿𝙾.'
-            );
+            return msg.reply('✧ El usuario ya no está en el grupo.');
         }
 
         if (targetParticipant.admin) {
-            return msg.reply(
-                '⚠︎ 𝙽𝙾 𝙿𝚄𝙴𝙳𝙾 𝙴𝙇𝙸𝙼𝙸𝙽𝙰𝚁 𝙰 𝚄𝙽 𝙰𝙳𝙼𝙸𝙽.'
-            );
+            return msg.reply('✧ No puedo expulsar a administradores del grupo.');
         }
 
-        await sock.groupParticipantsUpdate(
-            chatId,
-            [targetJid],
-            'remove'
-        );
-
-        const number = targetJid.split('@')[0];
+        await sock.groupParticipantsUpdate(chatId, [targetJid], 'remove');
 
         return sock.sendMessage(
             chatId,
             {
-                text:
-                    `🍓͜ᩧ𑂳ᰍ  𝙼𝙸𝙴𝙼𝙱𝚁𝙾 𝙴𝚇𝙿𝚄𝙻𝚂𝙰𝙳𝙾\n\n` +
-                    `🪷 @${number}`,
+                text: `✧ @${targetJid.split('@')[0]} ha sido expulsado del grupo.`,
                 mentions: [targetJid]
             },
             { quoted: msg }
         );
-
     } catch (error: any) {
         console.error('[KICK ERROR]:', error);
 
-        const status =
-            error?.output?.statusCode ||
-            error?.data ||
-            error?.status;
+        if (error?.output?.statusCode === 401 || error?.output?.statusCode === 500 || error?.data === 401) {
+            await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
 
-        if (status === 401 || status === 403 || status === 500) {
-            return msg.reply(
-                `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙴𝙹𝙴𝙲𝚄𝚃𝙰𝚁 𝙻𝙰 𝙰𝙲𝙲𝙸Ó𝙽.\n\n` +
-                `🍥 𝚅𝙴𝚁𝙸𝙵𝙸𝙲𝙰 𝚀𝚄𝙴 𝙴𝙻 𝙱𝙾𝚃 𝚂𝙴𝙰 𝙰𝙳𝙼𝙸𝙽.`
-            );
+            const rawBotJid = sock.user?.id || '';
+            const botNum = rawBotJid.split(':')[0].split('@')[0];
+            const botJid = `${botNum}@s.whatsapp.net`;
+
+            return sock.sendMessage(chatId, {
+                text: `✧ @${botNum} debe ser administrador del grupo para poder expulsar miembros.`,
+                mentions: [botJid]
+            }, { quoted: msg });
         }
 
-        return msg.reply(
-            '⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙴𝙲𝙷𝙰𝚁 𝙰𝙻 𝚄𝚂𝚄𝙰𝚁𝙸𝙾.'
-        );
+        return msg.reply('✧ Ocurrió un error al intentar expulsar al usuario.');
     }
 }
