@@ -26,6 +26,15 @@ export async function loadDB() {
             key TEXT PRIMARY KEY,
             value INTEGER DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS warnings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            groupJid TEXT NOT NULL,
+            userJid TEXT NOT NULL,
+            count INTEGER DEFAULT 0,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(groupJid, userJid)
+        );
     `);
 }
 
@@ -65,6 +74,46 @@ export function incrementCommandCount() {
     const stmt = db.prepare('SELECT value FROM bot_stats WHERE key = ?');
     const res = stmt.get('commands') as any;
     return res ? res.value : 1;
+}
+
+export function getWarnings(groupJid: string, userJid: string): number {
+    const stmt = db.prepare('SELECT count FROM warnings WHERE groupJid = ? AND userJid = ?');
+    const result = stmt.get(groupJid, userJid) as any;
+    return result ? result.count : 0;
+}
+
+export function addWarning(groupJid: string, userJid: string): number {
+    const current = getWarnings(groupJid, userJid);
+    const newCount = current + 1;
+    
+    if (current === 0) {
+        db.prepare('INSERT INTO warnings (groupJid, userJid, count) VALUES (?, ?, ?)')
+            .run(groupJid, userJid, newCount);
+    } else {
+        db.prepare('UPDATE warnings SET count = ? WHERE groupJid = ? AND userJid = ?')
+            .run(newCount, groupJid, userJid);
+    }
+    return newCount;
+}
+
+export function removeWarning(groupJid: string, userJid: string): number {
+    const current = getWarnings(groupJid, userJid);
+    if (current <= 0) return 0;
+    
+    const newCount = current - 1;
+    if (newCount === 0) {
+        db.prepare('DELETE FROM warnings WHERE groupJid = ? AND userJid = ?')
+            .run(groupJid, userJid);
+    } else {
+        db.prepare('UPDATE warnings SET count = ? WHERE groupJid = ? AND userJid = ?')
+            .run(newCount, groupJid, userJid);
+    }
+    return newCount;
+}
+
+export function clearWarnings(groupJid: string, userJid: string): void {
+    db.prepare('DELETE FROM warnings WHERE groupJid = ? AND userJid = ?')
+        .run(groupJid, userJid);
 }
 
 export { db };
