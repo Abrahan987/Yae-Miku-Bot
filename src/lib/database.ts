@@ -1,6 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
-import fs from 'node:fs';
 
 const dbPath = path.resolve(process.cwd(), 'database.sqlite');
 const db = new DatabaseSync(dbPath);
@@ -8,7 +7,7 @@ const db = new DatabaseSync(dbPath);
 export async function loadDB() {
     db.exec(`
         PRAGMA journal_mode = WAL;
-        
+
         CREATE TABLE IF NOT EXISTS users (
             jid TEXT PRIMARY KEY,
             name TEXT DEFAULT '',
@@ -84,36 +83,37 @@ export function getWarnings(groupJid: string, userJid: string): number {
 
 export function addWarning(groupJid: string, userJid: string): number {
     const current = getWarnings(groupJid, userJid);
-    const newCount = current + 1;
-    
+    const next = current + 1;
+
     if (current === 0) {
-        db.prepare('INSERT INTO warnings (groupJid, userJid, count) VALUES (?, ?, ?)')
-            .run(groupJid, userJid, newCount);
+        db.prepare('INSERT INTO warnings (groupJid, userJid, count) VALUES (?, ?, ?)').run(groupJid, userJid, next);
     } else {
-        db.prepare('UPDATE warnings SET count = ? WHERE groupJid = ? AND userJid = ?')
-            .run(newCount, groupJid, userJid);
+        db.prepare('UPDATE warnings SET count = ?, timestamp = CURRENT_TIMESTAMP WHERE groupJid = ? AND userJid = ?')
+            .run(next, groupJid, userJid);
     }
-    return newCount;
+
+    return next;
 }
 
 export function removeWarning(groupJid: string, userJid: string): number {
     const current = getWarnings(groupJid, userJid);
     if (current <= 0) return 0;
-    
-    const newCount = current - 1;
-    if (newCount === 0) {
-        db.prepare('DELETE FROM warnings WHERE groupJid = ? AND userJid = ?')
-            .run(groupJid, userJid);
+
+    const next = current - 1;
+
+    if (next === 0) {
+        db.prepare('DELETE FROM warnings WHERE groupJid = ? AND userJid = ?').run(groupJid, userJid);
     } else {
-        db.prepare('UPDATE warnings SET count = ? WHERE groupJid = ? AND userJid = ?')
-            .run(newCount, groupJid, userJid);
+        db.prepare('UPDATE warnings SET count = ?, timestamp = CURRENT_TIMESTAMP WHERE groupJid = ? AND userJid = ?')
+            .run(next, groupJid, userJid);
     }
-    return newCount;
+
+    return next;
 }
 
-export function clearWarnings(groupJid: string, userJid: string): void {
-    db.prepare('DELETE FROM warnings WHERE groupJid = ? AND userJid = ?')
-        .run(groupJid, userJid);
+export function resetWarnings(groupJid: string, userJid: string): number {
+    db.prepare('DELETE FROM warnings WHERE groupJid = ? AND userJid = ?').run(groupJid, userJid);
+    return 0;
 }
 
 export { db };
