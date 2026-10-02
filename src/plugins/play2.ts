@@ -31,41 +31,6 @@ const extractVideoId = (input: string): string | null => {
     return null;
 };
 
-const buildApis = (cleanUrl: string) => {
-    const enc = encodeURIComponent(cleanUrl);
-    return [
-        `https://api.ryuzei.xyz/download/ytvideo/v4?url=${enc}`,
-        `https://api.ryuzei.xyz/download/ytvideo/v3?url=${enc}`,
-        `https://api.ryuzei.xyz/ytvideo/v2?url=${enc}`,
-        `https://api.ryuzei.xyz/download/ytvideo?url=${enc}`
-    ];
-};
-
-const raceApi = async (apis: string[]): Promise<any | null> => {
-    return new Promise((resolve) => {
-        let resolved = false;
-        let failed = 0;
-        for (const url of apis) {
-            fetch(url)
-                .then(r => r.json())
-                .then((data: any) => {
-                    if (resolved) return;
-                    if (data?.status && data?.data?.download) {
-                        resolved = true;
-                        resolve(data);
-                    } else {
-                        failed++;
-                        if (failed === apis.length) resolve(null);
-                    }
-                })
-                .catch(() => {
-                    failed++;
-                    if (failed === apis.length && !resolved) resolve(null);
-                });
-        }
-    });
-};
-
 const compressVideo = (inputBuffer: Buffer): Promise<Buffer> => {
     return new Promise((resolve, reject) => {
         const tmpIn = path.join(os.tmpdir(), `play2_in_${Date.now()}.mp4`);
@@ -147,8 +112,6 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         }
 
         const cleanUrl = `https://youtu.be/${videoId}`;
-        const apis = buildApis(cleanUrl);
-
         const thumb =
             searchData?.thumbnail ||
             searchData?.image ||
@@ -180,9 +143,10 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             msg.reply(quickInfo);
         }
 
-        const data = await raceApi(apis);
+        const apiUrl = `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`;
+        const data: any = await fetch(apiUrl).then(r => r.json());
 
-        if (!data) {
+        if (!data?.status || !data?.data?.download) {
             return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
         }
 
