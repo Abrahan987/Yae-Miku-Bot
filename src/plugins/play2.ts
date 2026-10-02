@@ -1,4 +1,8 @@
 import ytsearch from 'yt-search';
+import ffmpeg from 'fluent-ffmpeg';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 export const command = ['play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'];
 export const category = 'descargas';
@@ -62,6 +66,43 @@ const raceApi = async (apis: string[]): Promise<any | null> => {
     });
 };
 
+const compressVideo = (inputBuffer: Buffer): Promise<Buffer> => {
+    return new Promise((resolve, reject) => {
+        const tmpIn = path.join(os.tmpdir(), `play2_in_${Date.now()}.mp4`);
+        const tmpOut = path.join(os.tmpdir(), `play2_out_${Date.now()}.mp4`);
+        fs.writeFileSync(tmpIn, inputBuffer);
+
+        ffmpeg(tmpIn)
+            .videoCodec('libx264')
+            .audioCodec('aac')
+            .format('mp4')
+            .outputOptions([
+                '-preset ultrafast',
+                '-crf 32',
+                '-vf scale=-2:480',
+                '-movflags faststart',
+                '-threads 4',
+                '-b:a 64k'
+            ])
+            .on('end', () => {
+                try {
+                    const out = fs.readFileSync(tmpOut);
+                    fs.unlinkSync(tmpIn);
+                    fs.unlinkSync(tmpOut);
+                    resolve(out);
+                } catch (e) {
+                    reject(e);
+                }
+            })
+            .on('error', (err) => {
+                try { fs.unlinkSync(tmpIn); } catch {}
+                try { fs.unlinkSync(tmpOut); } catch {}
+                reject(err);
+            })
+            .save(tmpOut);
+    });
+};
+
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const text = extra.args.join(' ').trim();
 
@@ -108,6 +149,37 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         const cleanUrl = `https://youtu.be/${videoId}`;
         const apis = buildApis(cleanUrl);
 
+        const thumb =
+            searchData?.thumbnail ||
+            searchData?.image ||
+            `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+        const quickTitle = searchData?.title || 'YouTube Video';
+        const quickAuthor = searchData?.author?.name || 'Desconocido';
+
+        const quickInfo =
+            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
+            `${global.namebot}\n` +
+            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
+            `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴 𝚅𝙸𝙳𝙴𝙾\n\n` +
+            `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${quickTitle}\n` +
+            `🍥 𝙰𝚄𝚃𝙾𝚁 ── ${quickAuthor}\n\n` +
+            `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...\n\n` +
+            `ꨄ︎ ${global.nmcreador}`;
+
+        if (thumb) {
+            fetch(thumb)
+                .then(r => r.arrayBuffer())
+                .then(b => sock.sendMessage(
+                    msg.from,
+                    { image: Buffer.from(b), caption: quickInfo },
+                    { quoted: msg }
+                ))
+                .catch(() => msg.reply(quickInfo));
+        } else {
+            msg.reply(quickInfo);
+        }
+
         const data = await raceApi(apis);
 
         if (!data) {
@@ -115,47 +187,27 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         }
 
         const info = data.data;
+        const title = info.title || quickTitle;
+        const fileName = `${cleanTitle(title)}.mp4`;
 
-        const title = info.title || searchData?.title || 'YouTube Video';
-        const author = info.author || info.channel || searchData?.author?.name || 'Desconocido';
-        const imageUrl = info.image || searchData?.thumbnail;
-
-        const infoText =
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴 𝚅𝙸𝙳𝙴𝙾\n\n` +
-            `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
-            `🍥 𝙰𝚄𝚃𝙾𝚁 ── ${author}\n` +
-            `🪷 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${info.views || 'N/A'}\n` +
-            `🪷 𝙵𝙾𝚁𝙼𝙰𝚃𝙾 ── ${info.format || 'MP4'}\n\n` +
-            `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...\n\n` +
-            `ꨄ︎ ${global.nmcreador}`;
-
-        const videoPromise = fetch(info.download)
+        const rawBuffer = await fetch(info.download)
             .then(r => r.arrayBuffer())
             .then(b => Buffer.from(b));
 
-        if (imageUrl) {
-            fetch(imageUrl)
-                .then(r => r.arrayBuffer())
-                .then(b => sock.sendMessage(
-                    msg.from,
-                    { image: Buffer.from(b), caption: infoText },
-                    { quoted: msg }
-                ))
-                .catch(() => msg.reply(infoText));
-        } else {
-            msg.reply(infoText);
+        let finalBuffer = rawBuffer;
+        try {
+            const compressed = await compressVideo(rawBuffer);
+            if (compressed.length > 0 && compressed.length < rawBuffer.length) {
+                finalBuffer = compressed;
+            }
+        } catch {
+            console.error('[PLAY2] ffmpeg error, usando original');
         }
-
-        const videoBuffer = await videoPromise;
-        const fileName = `${cleanTitle(title)}.mp4`;
 
         await sock.sendMessage(
             msg.from,
             {
-                video: videoBuffer,
+                video: finalBuffer,
                 mimetype: 'video/mp4',
                 fileName,
                 caption: title
