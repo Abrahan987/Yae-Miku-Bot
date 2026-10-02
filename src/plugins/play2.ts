@@ -114,7 +114,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
         const video = await axios.get(info.download, {
             responseType: 'arraybuffer',
-            timeout: 180000 // Timeout ampliado a 3 minutos por ser video (pesa más)
+            timeout: 180000
         });
 
         const fileName = `${cleanTitle(title)}.mp4`;
@@ -138,7 +138,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         );
 
         await msg.reply(
-            `⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`
+            `⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸𝙾́ 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅𝙸́𝙳𝙴𝙾`
         );
     } finally {
         processing.delete(requestKey);
