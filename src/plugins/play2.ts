@@ -27,6 +27,41 @@ const extractVideoId = (input: string): string | null => {
     return null;
 };
 
+const buildApis = (cleanUrl: string) => {
+    const enc = encodeURIComponent(cleanUrl);
+    return [
+        `https://api.ryuzei.xyz/download/ytvideo/v4?url=${enc}`,
+        `https://api.ryuzei.xyz/download/ytvideo/v3?url=${enc}`,
+        `https://api.ryuzei.xyz/ytvideo/v2?url=${enc}`,
+        `https://api.ryuzei.xyz/download/ytvideo?url=${enc}`
+    ];
+};
+
+const raceApi = async (apis: string[]): Promise<any | null> => {
+    return new Promise((resolve) => {
+        let resolved = false;
+        let failed = 0;
+        for (const url of apis) {
+            fetch(url)
+                .then(r => r.json())
+                .then((data: any) => {
+                    if (resolved) return;
+                    if (data?.status && data?.data?.download) {
+                        resolved = true;
+                        resolve(data);
+                    } else {
+                        failed++;
+                        if (failed === apis.length) resolve(null);
+                    }
+                })
+                .catch(() => {
+                    failed++;
+                    if (failed === apis.length && !resolved) resolve(null);
+                });
+        }
+    });
+};
+
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const text = extra.args.join(' ').trim();
 
@@ -71,12 +106,11 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         }
 
         const cleanUrl = `https://youtu.be/${videoId}`;
-        const apiUrl = `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`;
+        const apis = buildApis(cleanUrl);
 
-        const response = await fetch(apiUrl);
-        const data: any = await response.json();
+        const data = await raceApi(apis);
 
-        if (!data?.status || !data?.data?.download) {
+        if (!data) {
             return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
         }
 
@@ -94,29 +128,25 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
             `🍥 𝙰𝚄𝚃𝙾𝚁 ── ${author}\n` +
             `🪷 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${info.views || 'N/A'}\n` +
-            `🍥 𝙻𝙸𝙺𝙴𝚂 ── ${info.likes || 'N/A'}\n` +
             `🪷 𝙵𝙾𝚁𝙼𝙰𝚃𝙾 ── ${info.format || 'MP4'}\n\n` +
             `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...\n\n` +
             `ꨄ︎ ${global.nmcreador}`;
-
-        const imagePromise = imageUrl
-            ? fetch(imageUrl).then(r => r.arrayBuffer()).then(b => Buffer.from(b)).catch(() => null)
-            : Promise.resolve(null);
 
         const videoPromise = fetch(info.download)
             .then(r => r.arrayBuffer())
             .then(b => Buffer.from(b));
 
-        const imageBuffer = await imagePromise;
-
-        if (imageBuffer) {
-            await sock.sendMessage(
-                msg.from,
-                { image: imageBuffer, caption: infoText },
-                { quoted: msg }
-            );
+        if (imageUrl) {
+            fetch(imageUrl)
+                .then(r => r.arrayBuffer())
+                .then(b => sock.sendMessage(
+                    msg.from,
+                    { image: Buffer.from(b), caption: infoText },
+                    { quoted: msg }
+                ))
+                .catch(() => msg.reply(infoText));
         } else {
-            await msg.reply(infoText);
+            msg.reply(infoText);
         }
 
         const videoBuffer = await videoPromise;
