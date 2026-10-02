@@ -1,3 +1,5 @@
+import { addWarning } from '../lib/database.ts';
+
 export const command = ['warn', 'advertir', 'aviso'];
 export const category = 'admin';
 export const description = 'Agrega una advertencia a un usuario del grupo.';
@@ -10,7 +12,6 @@ export default async function (sock: any, msg: any, extra: any) {
     }
 
     const chatId = msg.from || msg.chat || extra?.chat;
-    const { addWarning, getWarnings } = await import('../lib/database.ts');
 
     try {
         const mentions = msg.mentionedJid || [];

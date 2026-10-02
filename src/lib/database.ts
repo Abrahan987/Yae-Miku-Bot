@@ -7,7 +7,7 @@ const db = new DatabaseSync(dbPath);
 export async function loadDB() {
     db.exec(`
         PRAGMA journal_mode = WAL;
-
+        
         CREATE TABLE IF NOT EXISTS users (
             jid TEXT PRIMARY KEY,
             name TEXT DEFAULT '',
