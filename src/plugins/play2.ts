@@ -15,6 +15,19 @@ const cleanTitle = (title: string) => {
         .slice(0, 100);
 };
 
+const extractVideoId = (input: string): string | null => {
+    if (!input) return null;
+    const patterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+        /^([a-zA-Z0-9_-]{11})$/
+    ];
+    for (const p of patterns) {
+        const m = input.match(p);
+        if (m) return m[1];
+    }
+    return null;
+};
+
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const text = extra.args.join(' ').trim();
 
@@ -37,12 +50,17 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     processing.add(requestKey);
 
     try {
-        let videoUrl = text;
+        let videoId: string | null = null;
         let searchData: any = null;
 
         const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(text);
 
-        if (!isYoutubeUrl) {
+        if (isYoutubeUrl) {
+            videoId = extractVideoId(text);
+            if (!videoId) {
+                return msg.reply(`🍥 𝙴𝙻 𝙴𝙽𝙻𝙰𝙲𝙴 𝙳𝙴 𝚈𝙾𝚄𝚃𝚄𝙱𝙴 𝙽𝙾 𝙴𝚂 𝚅Á𝙻𝙸𝙳𝙾 ❀`);
+            }
+        } else {
             const result = await ytsearch(text);
 
             if (!result.videos?.length) {
@@ -52,21 +70,27 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             }
 
             searchData = result.videos[0];
-            videoUrl = searchData.url;
+            videoId = searchData.videoId || extractVideoId(searchData.url);
         }
 
-        const apiUrl = `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(videoUrl)}`;
+        if (!videoId) {
+            return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙸𝙳 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
+        }
 
-        const response = await axios.get(apiUrl, {
-            timeout: 60000
-        });
+        const cleanUrl = `https://youtu.be/${videoId}`;
 
+        console.log('[PLAY2] videoId:', videoId);
+        console.log('[PLAY2] cleanUrl:', cleanUrl);
+
+        const apiUrl = `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`;
+
+        console.log('[PLAY2] apiUrl:', apiUrl);
+
+        const response = await axios.get(apiUrl, { timeout: 60000 });
         const data = response.data;
 
         if (!data?.status || !data?.data?.download) {
-            return msg.reply(
-                `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`
-            );
+            return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
         }
 
         const info = data.data;
@@ -94,16 +118,10 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                     responseType: 'arraybuffer',
                     timeout: 15000
                 });
-
                 await sock.sendMessage(
                     msg.from,
-                    {
-                        image: Buffer.from(image.data),
-                        caption: infoText
-                    },
-                    {
-                        quoted: msg
-                    }
+                    { image: Buffer.from(image.data), caption: infoText },
+                    { quoted: msg }
                 );
             } catch {
                 await msg.reply(infoText);
@@ -127,19 +145,14 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                 fileName,
                 caption: title
             },
-            {
-                quoted: msg
-            }
+            { quoted: msg }
         );
     } catch (error: any) {
         console.error(
             '[PLAY2]',
             error?.response?.data || error?.response?.status || error?.message || error
         );
-
-        await msg.reply(
-            `⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸𝙾́ 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅𝙸́𝙳𝙴𝙾`
-        );
+        await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸𝙾́ 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅𝙸́𝙳𝙴𝙾`);
     } finally {
         processing.delete(requestKey);
     }
