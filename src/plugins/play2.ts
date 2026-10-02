@@ -1,147 +1,137 @@
+import axios from 'axios';
 import ytsearch from 'yt-search';
-import { Readable } from 'stream';
 
-export const command = ['play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'];
+export const command = ['play', 'mp3', 'ytmp3', 'ytaudio', 'playaudio'];
 export const category = 'descargas';
-export const description = 'Busca y descarga videos de YouTube en formato MP4.';
+export const description = 'Busca y descarga canciones de YouTube en formato MP3.';
 
 const processing = new Set<string>();
+const cache = new Map<string, any>();
 
 const cleanTitle = (title: string) => {
-    return title
-        .replace(/[\\/:*?"<>|]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 100);
+    return title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
 };
 
-const extractVideoId = (input: string): string | null => {
-    if (!input) return null;
-    const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
-        /^([a-zA-Z0-9_-]{11})$/
-    ];
-    for (const p of patterns) {
-        const m = input.match(p);
-        if (m) return m[1];
-    }
+const getCached = (key: string) => {
+    const cached = cache.get(key);
+    if (cached && Date.now() - cached.time < 3600000) return cached.data;
+    cache.delete(key);
     return null;
 };
 
-const streamToBuffer = async (res: Response): Promise<Buffer> => {
-    if (!res.body) throw new Error('No body in response');
-    const reader = res.body.getReader();
-    const chunks: Uint8Array[] = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) chunks.push(value);
-    }
-    return Buffer.concat(chunks);
-};
+const axiosInstance = axios.create({
+    timeout: 30000,
+    maxRedirects: 5,
+});
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const text = extra.args.join(' ').trim();
 
     if (!text) {
         return msg.reply(
-            `🍓 𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝙴𝙻 𝙽𝙾𝙼𝙱𝚁𝙴 𝙾 𝚄𝚁𝙻 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾\n\n` +
-            `𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
-            `> ${global.prefix[0]}play2 Oh Klahoma`
+            `🍓 𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝙴𝙻 𝙽𝙾𝙼𝙱𝚁𝙴 𝙾 𝚄𝚁𝙻\n\n` +
+            `> ${global.prefix[0]}play Oh Klahoma`
         );
     }
 
     const requestKey = text.toLowerCase();
 
     if (processing.has(requestKey)) {
-        return msg.reply(`𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙴𝙽 𝙿𝚁𝙾𝙲𝙴𝚂𝙾 ❀`);
+        return msg.reply(`⏳ 𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙰𝙲𝚃𝙸𝚅𝙰`);
     }
 
     processing.add(requestKey);
+    msg.react('⏳');
 
     try {
-        let videoId: string | null = null;
-        let searchData: any = null;
-
+        let videoUrl = text;
+        let searchData: any = getCached(requestKey);
         const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(text);
 
-        if (isYoutubeUrl) {
-            videoId = extractVideoId(text);
-            if (!videoId) {
-                return msg.reply(`🍥 𝙴𝙻 𝙴𝙽𝙻𝙰𝙲𝙴 𝙳𝙴 𝚈𝙾𝚄𝚃𝚄𝙱𝙴 𝙽𝙾 𝙴𝚂 𝚅Á𝙻𝙸𝙳𝙾 ❀`);
+        if (!isYoutubeUrl && !searchData) {
+            try {
+                const result = await ytsearch(text);
+                if (!result.videos?.length) {
+                    msg.react('❌');
+                    return msg.reply(`🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚁𝙴𝚂𝚄𝙻𝚃𝙰𝙳𝙾𝚂`);
+                }
+                searchData = result.videos[0];
+                cache.set(requestKey, { data: searchData, time: Date.now() });
+                videoUrl = searchData.url;
+            } catch {
+                msg.react('❌');
+                return msg.reply(`⚠︎ 𝙴𝚁𝚁𝙾𝚁 𝙴𝙽 𝙻𝙰 𝙱𝚄𝚂𝚀𝚄𝙴𝙳𝙰`);
             }
-        } else {
-            const result = await ytsearch(text);
-            if (!result.videos?.length) {
-                return msg.reply(`🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`);
-            }
-            searchData = result.videos[0];
-            videoId = searchData.videoId || extractVideoId(searchData.url);
         }
 
-        if (!videoId) {
-            return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙸𝙳 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
-        }
+        msg.react('📥');
 
-        const cleanUrl = `https://youtu.be/${videoId}`;
-        const thumb =
-            searchData?.thumbnail ||
-            searchData?.image ||
-            `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
-        const quickTitle = searchData?.title || 'YouTube Video';
-        const quickAuthor = searchData?.author?.name || 'Desconocido';
-
-        const quickInfo =
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴 𝚅𝙸𝙳𝙴𝙾\n\n` +
-            `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${quickTitle}\n` +
-            `🍥 𝙰𝚄𝚃𝙾𝚁 ── ${quickAuthor}\n\n` +
-            `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...\n\n` +
-            `ꨄ︎ ${global.nmcreador}`;
-
-        if (thumb) {
-            fetch(thumb)
-                .then(r => r.arrayBuffer())
-                .then(b => sock.sendMessage(
-                    msg.from,
-                    { image: Buffer.from(b), caption: quickInfo },
-                    { quoted: msg }
-                ))
-                .catch(() => msg.reply(quickInfo));
-        } else {
-            msg.reply(quickInfo);
-        }
-
-        const apiUrl = `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`;
-        const data: any = await fetch(apiUrl).then(r => r.json());
+        const apiUrl = `https://api.delirius.online/download/ytmp3?url=${encodeURIComponent(videoUrl)}`;
+        const response = await axiosInstance.get(apiUrl);
+        const data = response.data;
 
         if (!data?.status || !data?.data?.download) {
-            return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
+            msg.react('❌');
+            return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`);
         }
 
         const info = data.data;
-        const title = info.title || quickTitle;
-        const fileName = `${cleanTitle(title)}.mp4`;
+        const title = info.title || searchData?.title || 'YouTube Audio';
+        const author = info.author || searchData?.author?.name || 'Desconocido';
+        const imageUrl = info.image || searchData?.thumbnail;
 
-        const videoRes = await fetch(info.download);
-        const videoBuffer = await streamToBuffer(videoRes);
+        const infoText =
+            `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴\n\n` +
+            `🪷 ${title}\n` +
+            `🍥 ${author}\n\n` +
+            `📥 𝙳𝚎𝚜𝚌𝚊𝚛𝚐𝚊𝚗𝚍𝚘...`;
+
+        msg.react('⏬');
+
+        const audioPromise = axiosInstance.get(info.download, {
+            responseType: 'arraybuffer',
+            timeout: 90000
+        });
+
+        const imagePromise = imageUrl ? axiosInstance.get(imageUrl, {
+            responseType: 'arraybuffer',
+            timeout: 10000
+        }).catch(() => null) : Promise.resolve(null);
+
+        const [audioRes, imageRes] = await Promise.all([audioPromise, imagePromise]);
+
+        if (imageRes?.data) {
+            await sock.sendMessage(
+                msg.from,
+                {
+                    image: Buffer.from(imageRes.data),
+                    caption: infoText
+                },
+                { quoted: msg }
+            ).catch(() => msg.reply(infoText));
+        } else {
+            await msg.reply(infoText);
+        }
+
+        const fileName = `${cleanTitle(title)}.mp3`;
 
         await sock.sendMessage(
             msg.from,
             {
-                video: videoBuffer,
-                mimetype: 'video/mp4',
+                audio: Buffer.from(audioRes.data),
+                mimetype: 'audio/mpeg',
                 fileName,
-                caption: title
+                ptt: false
             },
             { quoted: msg }
         );
+
+        msg.react('✅');
+
     } catch (error: any) {
-        console.error('[PLAY2]', error?.message || error);
-        await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸𝙾́ 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅𝙸́𝙳𝙴𝙾`);
+        console.error('[PLAY ERROR]:', error.message);
+        msg.react('❌');
+        await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁`);
     } finally {
         processing.delete(requestKey);
     }

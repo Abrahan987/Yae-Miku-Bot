@@ -1,146 +1,86 @@
-import axios from 'axios';
-import ytsearch from 'yt-search';
+export const command = ['kick', 'remove', 'out'];
+export const category = 'admin';
+export const description = 'Expulsa a un miembro del grupo.';
+export const admin = true;
+export const botAdmin = true;
 
-export const command = ['play', 'mp3', 'ytmp3', 'ytaudio', 'playaudio'];
-export const category = 'descargas';
-export const description = 'Busca y descarga canciones de YouTube en formato MP3.';
-
-const processing = new Set<string>();
-
-const cleanTitle = (title: string) => {
-    return title
-        .replace(/[\\/:*?"<>|]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 100);
-};
-
-export default async function (sock: any, msg: any, extra: any, db: any) {
-    const text = extra.args.join(' ').trim();
-
-    if (!text) {
-        return msg.reply(
-            `🍓 𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝙴𝙻 𝙽𝙾𝙼𝙱𝚁𝙴 𝙾 𝚄𝚁𝙻 𝙳𝙴 𝙻𝙰 𝙲𝙰𝙽𝙲𝙸Ó𝙽\n\n` +
-            `𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
-            `> ${global.prefix[0]}play Oh Klahoma`
-        );
+export default async function (sock: any, msg: any, extra: any) {
+    if (!msg.isGroup) {
+        return msg.reply('🍓 𝙴𝚂𝚃𝙴 𝙲𝙾𝙼𝙰𝙽𝙳𝙾 𝚂𝙾𝙻𝙾 𝙵𝚄𝙽𝙲𝙸𝙾𝙽𝙰 𝙴𝙽 𝙶𝚁𝚄𝙿𝙾𝚂.');
     }
 
-    const requestKey = text.toLowerCase();
-
-    if (processing.has(requestKey)) {
-        return msg.reply(
-            `𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙴𝙽 𝙿𝚁𝙾𝙲𝙴𝚂𝙾 ❀`
-        );
-    }
-
-    processing.add(requestKey);
+    const chatId = msg.from || msg.chat || extra?.chat;
 
     try {
-        let videoUrl = text;
-        let searchData: any = null;
+        const metadata = await sock.groupMetadata(chatId);
+        const participants = metadata?.participants || [];
 
-        const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(text);
+        const botRawJid = sock.user?.id || '';
+        const botNumber = botRawJid.split(':')[0].split('@')[0];
 
-        if (!isYoutubeUrl) {
-            const result = await ytsearch(text);
-
-            if (!result.videos?.length) {
-                return msg.reply(
-                    `🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`
-                );
-            }
-
-            searchData = result.videos[0];
-            videoUrl = searchData.url;
-        }
-
-        const apiUrl = `https://api.delirius.online/download/ytmp3?url=${encodeURIComponent(videoUrl)}`;
-
-        const response = await axios.get(apiUrl, {
-            timeout: 60000
+        const botParticipant = participants.find((p: any) => {
+            const id = p.id || '';
+            return id.split(':')[0].split('@')[0] === botNumber;
         });
 
-        const data = response.data;
-
-        if (!data?.status || !data?.data?.download) {
+        if (!botParticipant?.admin) {
             return msg.reply(
-                `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`
+                `⚠︎ 𝙽𝙾 𝚂𝙾𝚈 𝙰𝙳𝙼𝙸𝙽\n\n` +
+                `🍥 𝙽𝙴𝙲𝙴𝚂𝙸𝚃𝙾 𝚂𝙴𝚁 𝙰𝙳𝙼𝙸𝙽 𝙿𝙰𝚁𝙰 𝙴𝙲𝙷𝙰𝚁 𝙰 𝙰𝙻𝙶𝚄𝙸𝙴𝙽.`
             );
         }
 
-        const info = data.data;
+        const mentions = msg.mentionedJid || [];
+        let targetJid = mentions[0];
 
-        const title = info.title || searchData?.title || 'YouTube Audio';
-        const author = info.author || searchData?.author?.name || 'Desconocido';
-        const imageUrl = info.image || searchData?.thumbnail;
-
-        const infoText =
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴\n\n` +
-            `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
-            `🍥 𝙰𝚄𝚃𝙾𝚁 ── ${author}\n` +
-            `🪷 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${info.views || 'N/A'}\n` +
-            `🍥 𝙻𝙸𝙺𝙴𝚂 ── ${info.likes || 'N/A'}\n` +
-            `🪷 𝙵𝙾𝚁𝙼𝙰𝚃𝙾 ── ${info.format || 'MP3'}\n\n` +
-            `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...\n\n` +
-            `ꨄ︎ ${global.nmcreador}`;
-
-        if (imageUrl) {
-            try {
-                const image = await axios.get(imageUrl, {
-                    responseType: 'arraybuffer',
-                    timeout: 15000
-                });
-
-                await sock.sendMessage(
-                    msg.from,
-                    {
-                        image: Buffer.from(image.data),
-                        caption: infoText
-                    },
-                    {
-                        quoted: msg
-                    }
-                );
-            } catch {
-                await msg.reply(infoText);
-            }
-        } else {
-            await msg.reply(infoText);
+        if (!targetJid && msg.quoted) {
+            targetJid = msg.quoted.sender;
         }
 
-        const audio = await axios.get(info.download, {
-            responseType: 'arraybuffer',
-            timeout: 120000
-        });
+        if (!targetJid) {
+            return msg.reply(
+                `🍓 𝚄𝚂𝙾\n\n` +
+                `> ${global.prefix[0]}kick @usuario\n` +
+                `> Responde a su mensaje`
+            );
+        }
 
-        const fileName = `${cleanTitle(title)}.mp3`;
+        const targetParticipant = participants.find((p: any) => p.id === targetJid);
 
-        await sock.sendMessage(
-            msg.from,
+        if (!targetParticipant) {
+            return msg.reply('⚠︎ 𝙴𝙻 𝚄𝚂𝚄𝙰𝚁𝙸𝙾 𝙽𝙾 𝙴𝚂𝚃𝙰́ 𝙴𝙽 𝙴𝙻 𝙶𝚁𝚄𝙿𝙾.');
+        }
+
+        if (targetParticipant.admin) {
+            return msg.reply('⚠︎ 𝙽𝙾 𝙿𝚄𝙴𝙳𝙾 𝙴𝙻𝙸𝙼𝙸𝙽𝙰𝚁 𝙰 𝚄𝙽 𝙰𝙳𝙼𝙸𝙽.');
+        }
+
+        await sock.groupParticipantsUpdate(chatId, [targetJid], 'remove');
+
+        const number = targetJid.split('@')[0];
+
+        return sock.sendMessage(
+            chatId,
             {
-                audio: Buffer.from(audio.data),
-                mimetype: 'audio/mpeg',
-                fileName,
-                ptt: false
+                text:
+                    `🍓͜ᩧ𑂳ᰍ  𝙼𝙸𝙴𝙼𝙱𝚁𝙾 𝙴𝚇𝙿𝚄𝙻𝚂𝙰𝙳𝙾\n\n` +
+                    `🪷 @${number}`,
+                mentions: [targetJid]
             },
-            {
-                quoted: msg
-            }
+            { quoted: msg }
         );
     } catch (error: any) {
-        console.error(
-            '[PLAY]',
-            error?.response?.data || error?.response?.status || error?.message || error
-        );
+        console.error('[KICK ERROR]:', error);
 
-        await msg.reply(
-            `⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`
-        );
-    } finally {
-        processing.delete(requestKey);
+        const status = error?.output?.statusCode || error?.data || error?.status;
+
+        if (status === 401 || status === 403 || status === 500) {
+            return msg.reply(
+                `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙴𝙹𝙴𝙲𝚄𝚃𝙰𝚁 𝙻𝙰 𝙰𝙲𝙲𝙸Ó𝙽.\n\n` +
+                `🍥 𝚅𝙴𝚁𝙸𝙵𝙸𝙲𝙰 𝚀𝚄𝙴 𝙴𝙻 𝙱𝙾𝚃 𝚂𝙴𝙰 𝙰𝙳𝙼𝙸𝙽.`
+            );
+        }
+
+        return msg.reply('⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙴𝙲𝙷𝙰𝚁 𝙰𝙻 𝚄𝚂𝚄𝙰𝚁𝙸𝙾.');
     }
 }

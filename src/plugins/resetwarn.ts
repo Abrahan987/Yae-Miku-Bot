@@ -1,8 +1,8 @@
-import { resetWarnings } from '../lib/database.ts';
+import { getWarnings } from '../lib/database.ts';
 
-export const command = ['resetwarn', 'clearwarn', 'eliminarwarn'];
+export const command = ['checkwarn', 'warns', 'advertencias'];
 export const category = 'admin';
-export const description = 'Reinicia todas las advertencias de un usuario.';
+export const description = 'Consulta cuántas advertencias tiene un usuario.';
 export const admin = true;
 export const botAdmin = false;
 
@@ -24,7 +24,7 @@ export default async function (sock: any, msg: any, extra: any) {
         if (!targetJid) {
             return msg.reply(
                 `🍓 𝚄𝚂𝙾\n\n` +
-                `> ${global.prefix[0]}resetwarn @usuario\n` +
+                `> ${global.prefix[0]}checkwarn @usuario\n` +
                 `> Responde a su mensaje`
             );
         }
@@ -37,21 +37,21 @@ export default async function (sock: any, msg: any, extra: any) {
             return msg.reply('⚠︎ 𝙴𝙻 𝚄𝚂𝚄𝙰𝚁𝙸𝙾 𝙽𝙾 𝙴𝚂𝚃𝙰́ 𝙴𝙽 𝙴𝙻 𝙶𝚁𝚄𝙿𝙾.');
         }
 
-        resetWarnings(chatId, targetJid);
+        const warnings = getWarnings(chatId, targetJid);
 
         return sock.sendMessage(
             chatId,
             {
                 text:
-                    `✅ 𝚂𝙴 𝚁𝙴𝙸𝙽𝙸𝙲𝙸𝙰𝚁𝙾𝙽 𝙻𝙰𝚂 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂\n\n` +
+                    `⚠️ 𝚂𝚃𝙰𝚃𝚄𝚂 𝙳𝙴 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂\n\n` +
                     `🪷 @${targetJid.split('@')[0]}\n` +
-                    `📌 𝙰𝙷𝙾𝚁𝙰 𝙽𝙾 𝚃𝙸𝙴𝙽𝙴 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂.`,
+                    `📌 𝚃𝚒𝚎𝚗𝚎 ${warnings}/3 𝚊𝚍𝚟𝚎𝚛𝚝𝚎𝚗𝚌𝚒𝚊𝚜.`,
                 mentions: [targetJid]
             },
             { quoted: msg }
         );
     } catch (error: any) {
-        console.error('[RESETWARN ERROR]:', error);
-        return msg.reply('⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝚁𝙴𝙸𝙽𝙸𝙲𝙸𝙰𝚁 𝙻𝙰𝚂 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂.');
+        console.error('[CHECKWARN ERROR]:', error);
+        return msg.reply('⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙲𝙾𝙽𝚂𝚄𝙻𝚃𝙰𝚁 𝙻𝙰𝚂 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂.');
     }
 }
