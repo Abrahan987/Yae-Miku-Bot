@@ -1,147 +1,119 @@
-import ytsearch from 'yt-search';
+import { DatabaseSync } from 'node:sqlite';
+import path from 'node:path';
 
-export const command = ['play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'];
-export const category = 'descargas';
-export const description = 'Busca y descarga videos de YouTube en formato MP4.';
+const dbPath = path.resolve(process.cwd(), 'database.sqlite');
+const db = new DatabaseSync(dbPath);
 
-const processing = new Set<string>();
-const cache = new Map<string, any>();
-
-const cleanTitle = (title: string) => {
-    return title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
-};
-
-const getCached = (key: string) => {
-    const cached = cache.get(key);
-    if (cached && Date.now() - cached.time < 3600000) return cached.data;
-    cache.delete(key);
-    return null;
-};
-
-const extractVideoId = (input: string): string | null => {
-    if (!input) return null;
-    const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
-        /^([a-zA-Z0-9_-]{11})$/
-    ];
-    for (const p of patterns) {
-        const m = input.match(p);
-        if (m) return m[1];
-    }
-    return null;
-};
-
-export default async function (sock: any, msg: any, extra: any, db: any) {
-    const text = extra.args.join(' ').trim();
-
-    if (!text) {
-        return msg.reply(
-            `🍓 𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝚄𝙽 𝚅Í𝙳𝙴𝙾\n\n` +
-            `> ${global.prefix[0]}play2 Oh Klahoma`
+export async function loadDB() {
+    db.exec(`
+        PRAGMA journal_mode = WAL;
+        
+        CREATE TABLE IF NOT EXISTS users (
+            jid TEXT PRIMARY KEY,
+            name TEXT DEFAULT '',
+            yen INTEGER DEFAULT 0,
+            banned INTEGER DEFAULT 0
         );
-    }
 
-    const requestKey = text.toLowerCase();
+        CREATE TABLE IF NOT EXISTS groups (
+            jid TEXT PRIMARY KEY,
+            welcome INTEGER DEFAULT 0,
+            mute INTEGER DEFAULT 0
+        );
 
-    if (processing.has(requestKey)) {
-        return msg.reply(`⏳ 𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙰𝙲𝚃𝙸𝚅𝙰`);
-    }
+        CREATE TABLE IF NOT EXISTS bot_stats (
+            key TEXT PRIMARY KEY,
+            value INTEGER DEFAULT 0
+        );
 
-    processing.add(requestKey);
-    msg.react('⏳');
-
-    try {
-        let videoId: string | null = null;
-        let searchData: any = getCached(requestKey);
-
-        const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(text);
-
-        if (isYoutubeUrl) {
-            videoId = extractVideoId(text);
-            if (!videoId) {
-                msg.react('❌');
-                return msg.reply(`🍥 𝙴𝙽𝙻𝙰𝙲𝙴 𝙸𝙽𝚅Á𝙻𝙸𝙳𝙾`);
-            }
-        } else if (!searchData) {
-            try {
-                const result = await ytsearch(text);
-                if (!result.videos?.length) {
-                    msg.react('❌');
-                    return msg.reply(`🍥 𝙽𝙾 𝙷𝙰𝙱Í𝙰 𝚅𝙸𝙳𝙴𝙾𝚂`);
-                }
-                searchData = result.videos[0];
-                cache.set(requestKey, { data: searchData, time: Date.now() });
-                videoId = searchData.videoId || extractVideoId(searchData.url);
-            } catch {
-                msg.react('❌');
-                return msg.reply(`⚠︎ 𝙴𝚁𝚁𝙾𝚁 𝙴𝙽 𝙱𝚄𝚂𝚀𝚄𝙴𝙳𝙰`);
-            }
-        } else {
-            videoId = searchData.videoId || extractVideoId(searchData.url);
-        }
-
-        if (!videoId) {
-            msg.react('❌');
-            return msg.reply(`⚠︎ 𝙰𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙸𝙳`);
-        }
-
-        msg.react('📥');
-
-        const cleanUrl = `https://youtu.be/${videoId}`;
-        const thumb = searchData?.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-        const quickTitle = searchData?.title || 'Video';
-        const quickInfo = `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴\n🪷 ${quickTitle}\n\n⏬ 𝙳𝚎𝚜𝚌𝚊𝚛𝚐𝚊𝚗𝚍𝚘...`;
-
-        msg.react('⏬');
-
-        const thumbPromise = fetch(thumb)
-            .then(r => r.arrayBuffer())
-            .then(b => sock.sendMessage(msg.from, { image: Buffer.from(b), caption: quickInfo }, { quoted: msg }))
-            .catch(() => msg.reply(quickInfo));
-
-        const videoPromise = (async () => {
-            const apiUrl = `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`;
-            const data = await fetch(apiUrl).then(r => r.json());
-
-            if (!data?.status || !data?.data?.download) {
-                throw new Error('Sin datos de descarga');
-            }
-
-            const info = data.data;
-            const title = info.title || quickTitle;
-            const fileName = `${cleanTitle(title)}.mp4`;
-
-            const videoRes = await fetch(info.download);
-            const videoBuffer = await videoRes.arrayBuffer();
-
-            return { buffer: videoBuffer, fileName, title };
-        })();
-
-        await Promise.all([thumbPromise, videoPromise]).then(async ([_, videoData]: any) => {
-            if (videoData) {
-                await sock.sendMessage(
-                    msg.from,
-                    {
-                        video: Buffer.from(videoData.buffer),
-                        mimetype: 'video/mp4',
-                        fileName: videoData.fileName,
-                        caption: videoData.title
-                    },
-                    { quoted: msg }
-                );
-                msg.react('✅');
-            }
-        }).catch((error) => {
-            console.error('[PLAY2 ERROR]:', error);
-            msg.react('❌');
-            msg.reply(`⚠︎ 𝙾𝚌𝚞𝚛𝚛𝚒ó 𝚞𝚗 𝚎𝚛𝚛𝚘𝚛`);
-        });
-
-    } catch (error: any) {
-        console.error('[PLAY2]', error.message);
-        msg.react('❌');
-        await msg.reply(`⚠︎ 𝙴𝚛𝚛𝚘𝚛`);
-    } finally {
-        processing.delete(requestKey);
-    }
+        CREATE TABLE IF NOT EXISTS warnings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            groupJid TEXT NOT NULL,
+            userJid TEXT NOT NULL,
+            count INTEGER DEFAULT 0,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(groupJid, userJid)
+        );
+    `);
 }
+
+export function getUser(jid: string) {
+    const stmt = db.prepare('SELECT * FROM users WHERE jid = ?');
+    let user = stmt.get(jid) as any;
+    if (!user) {
+        db.prepare('INSERT INTO users (jid) VALUES (?)').run(jid);
+        user = { jid, name: '', yen: 0, banned: 0 };
+    }
+    return user;
+}
+
+export function updateUser(jid: string, data: Partial<{ name: string; yen: number; banned: number }>) {
+    const user = getUser(jid);
+    const updated = { ...user, ...data };
+    db.prepare('UPDATE users SET name = ?, yen = ?, banned = ? WHERE jid = ?')
+      .run(updated.name, updated.yen, updated.banned, jid);
+    return updated;
+}
+
+export function getGroup(jid: string) {
+    const stmt = db.prepare('SELECT * FROM groups WHERE jid = ?');
+    let group = stmt.get(jid) as any;
+    if (!group) {
+        db.prepare('INSERT INTO groups (jid) VALUES (?)').run(jid);
+        group = { jid, welcome: 0, mute: 0 };
+    }
+    return group;
+}
+
+export function incrementCommandCount() {
+    db.exec(`
+        INSERT INTO bot_stats (key, value) VALUES ('commands', 1)
+        ON CONFLICT(key) DO UPDATE SET value = value + 1;
+    `);
+    const stmt = db.prepare('SELECT value FROM bot_stats WHERE key = ?');
+    const res = stmt.get('commands') as any;
+    return res ? res.value : 1;
+}
+
+export function getWarnings(groupJid: string, userJid: string): number {
+    const stmt = db.prepare('SELECT count FROM warnings WHERE groupJid = ? AND userJid = ?');
+    const result = stmt.get(groupJid, userJid) as any;
+    return result ? result.count : 0;
+}
+
+export function addWarning(groupJid: string, userJid: string): number {
+    const current = getWarnings(groupJid, userJid);
+    const next = current + 1;
+
+    if (current === 0) {
+        db.prepare('INSERT INTO warnings (groupJid, userJid, count) VALUES (?, ?, ?)').run(groupJid, userJid, next);
+    } else {
+        db.prepare('UPDATE warnings SET count = ?, timestamp = CURRENT_TIMESTAMP WHERE groupJid = ? AND userJid = ?')
+            .run(next, groupJid, userJid);
+    }
+
+    return next;
+}
+
+export function removeWarning(groupJid: string, userJid: string): number {
+    const current = getWarnings(groupJid, userJid);
+    if (current <= 0) return 0;
+
+    const next = current - 1;
+
+    if (next === 0) {
+        db.prepare('DELETE FROM warnings WHERE groupJid = ? AND userJid = ?').run(groupJid, userJid);
+    } else {
+        db.prepare('UPDATE warnings SET count = ?, timestamp = CURRENT_TIMESTAMP WHERE groupJid = ? AND userJid = ?')
+            .run(next, groupJid, userJid);
+    }
+
+    return next;
+}
+
+export function resetWarnings(groupJid: string, userJid: string): number {
+    db.prepare('DELETE FROM warnings WHERE groupJid = ? AND userJid = ?').run(groupJid, userJid);
+    return 0;
+}
+
+export { db };
