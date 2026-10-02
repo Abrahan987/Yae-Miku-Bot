@@ -1,8 +1,5 @@
 import ytsearch from 'yt-search';
-import ffmpeg from 'fluent-ffmpeg';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import { Readable } from 'stream';
 
 export const command = ['play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'];
 export const category = 'descargas';
@@ -31,41 +28,16 @@ const extractVideoId = (input: string): string | null => {
     return null;
 };
 
-const compressVideo = (inputBuffer: Buffer): Promise<Buffer> => {
-    return new Promise((resolve, reject) => {
-        const tmpIn = path.join(os.tmpdir(), `play2_in_${Date.now()}.mp4`);
-        const tmpOut = path.join(os.tmpdir(), `play2_out_${Date.now()}.mp4`);
-        fs.writeFileSync(tmpIn, inputBuffer);
-
-        ffmpeg(tmpIn)
-            .videoCodec('libx264')
-            .audioCodec('aac')
-            .format('mp4')
-            .outputOptions([
-                '-preset ultrafast',
-                '-crf 32',
-                '-vf scale=-2:480',
-                '-movflags faststart',
-                '-threads 4',
-                '-b:a 64k'
-            ])
-            .on('end', () => {
-                try {
-                    const out = fs.readFileSync(tmpOut);
-                    fs.unlinkSync(tmpIn);
-                    fs.unlinkSync(tmpOut);
-                    resolve(out);
-                } catch (e) {
-                    reject(e);
-                }
-            })
-            .on('error', (err) => {
-                try { fs.unlinkSync(tmpIn); } catch {}
-                try { fs.unlinkSync(tmpOut); } catch {}
-                reject(err);
-            })
-            .save(tmpOut);
-    });
+const streamToBuffer = async (res: Response): Promise<Buffer> => {
+    if (!res.body) throw new Error('No body in response');
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+    }
+    return Buffer.concat(chunks);
 };
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
@@ -154,24 +126,13 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         const title = info.title || quickTitle;
         const fileName = `${cleanTitle(title)}.mp4`;
 
-        const rawBuffer = await fetch(info.download)
-            .then(r => r.arrayBuffer())
-            .then(b => Buffer.from(b));
-
-        let finalBuffer = rawBuffer;
-        try {
-            const compressed = await compressVideo(rawBuffer);
-            if (compressed.length > 0 && compressed.length < rawBuffer.length) {
-                finalBuffer = compressed;
-            }
-        } catch {
-            console.error('[PLAY2] ffmpeg error, usando original');
-        }
+        const videoRes = await fetch(info.download);
+        const videoBuffer = await streamToBuffer(videoRes);
 
         await sock.sendMessage(
             msg.from,
             {
-                video: finalBuffer,
+                video: videoBuffer,
                 mimetype: 'video/mp4',
                 fileName,
                 caption: title
