@@ -28,10 +28,25 @@ const extractVideoId = (input: string): string | null => {
     return null;
 };
 
+const ANDROID_WEB_AGENT =
+    'Mozilla/5.0 (Linux; Android 14; SM-S928B Build/UP1A.231005.007; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/126.0.6478.122 Mobile Safari/537.36 [FBAN/EMA;FBLC/es_LA;FBAV/442.0.0.30.112]';
+
+const DEFAULT_AGENT =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
 const getApiCandidates = (cleanUrl: string) => [
-    `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`,
-    `https://api.ryuzei.xyz/download/ytvideo?url=${encodeURIComponent(cleanUrl)}`,
-    `https://api.ryuzei.xyz/ytvideo/v2?url=${encodeURIComponent(cleanUrl)}`
+    {
+        url: `https://api.ryuzei.xyz/download/ytvideo?url=${encodeURIComponent(cleanUrl)}`,
+        agent: DEFAULT_AGENT
+    },
+    {
+        url: `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`,
+        agent: ANDROID_WEB_AGENT
+    },
+    {
+        url: `https://api.ryuzei.xyz/ytvideo/v2?url=${encodeURIComponent(cleanUrl)}`,
+        agent: DEFAULT_AGENT
+    }
 ];
 
 const isVideoBuffer = (buffer: Buffer): boolean => {
@@ -45,7 +60,10 @@ const isVideoBuffer = (buffer: Buffer): boolean => {
     return buffer.length > 100 * 1024;
 };
 
-const resolveDownload = async (downloadUrl: string): Promise<{ buffer: Buffer } | { redirectUrl: string } | null> => {
+const resolveDownload = async (
+    downloadUrl: string,
+    agent: string
+): Promise<{ buffer: Buffer } | { redirectUrl: string } | null> => {
     try {
         const res = await axios.get(downloadUrl, {
             responseType: 'arraybuffer',
@@ -55,8 +73,10 @@ const resolveDownload = async (downloadUrl: string): Promise<{ buffer: Buffer } 
             maxRedirects: 5,
             validateStatus: () => true,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': '*/*'
+                'User-Agent': agent,
+                'Accept': '*/*',
+                'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
+                'X-Requested-With': 'com.android.chrome'
             }
         });
 
@@ -98,42 +118,46 @@ const resolveDownload = async (downloadUrl: string): Promise<{ buffer: Buffer } 
     }
 };
 
-const fetchVideoBuffer = async (cleanUrl: string): Promise<{ buffer: Buffer; title?: string; image?: string; author?: string } | null> => {
+const fetchVideoBuffer = async (
+    cleanUrl: string
+): Promise<{ buffer: Buffer; title?: string; image?: string; author?: string } | null> => {
     const apis = getApiCandidates(cleanUrl);
 
-    for (const apiUrl of apis) {
+    for (const api of apis) {
         try {
-            console.log('[PLAY2] Probando API:', apiUrl);
+            console.log('[PLAY2] Probando API:', api.url);
 
-            const { data } = await axios.get(apiUrl, {
+            const { data } = await axios.get(api.url, {
                 timeout: 30000,
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    'User-Agent': api.agent,
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8'
                 }
             });
 
             if (!data?.status || !data?.data?.download) {
-                console.log('[PLAY2] API sin descarga válida:', apiUrl);
+                console.log('[PLAY2] API sin descarga válida:', api.url);
                 continue;
             }
 
             const info = data.data;
 
-            let resolved = await resolveDownload(info.download);
+            let resolved = await resolveDownload(info.download, api.agent);
 
             let attempts = 0;
             while (resolved && 'redirectUrl' in resolved && attempts < 3) {
                 console.log('[PLAY2] Redirigiendo a:', resolved.redirectUrl);
-                resolved = await resolveDownload(resolved.redirectUrl);
+                resolved = await resolveDownload(resolved.redirectUrl, api.agent);
                 attempts++;
             }
 
             if (!resolved || !('buffer' in resolved)) {
-                console.log('[PLAY2] No se pudo obtener buffer desde:', apiUrl);
+                console.log('[PLAY2] No se pudo obtener buffer desde:', api.url);
                 continue;
             }
 
-            console.log('[PLAY2] Descarga exitosa desde:', apiUrl);
+            console.log('[PLAY2] Descarga exitosa desde:', api.url);
             return {
                 buffer: resolved.buffer,
                 title: info.title,
@@ -141,7 +165,7 @@ const fetchVideoBuffer = async (cleanUrl: string): Promise<{ buffer: Buffer; tit
                 author: info.author
             };
         } catch (err: any) {
-            console.log('[PLAY2] Falló API:', apiUrl, '-', err?.message || err);
+            console.log('[PLAY2] Falló API:', api.url, '-', err?.message || err);
             continue;
         }
     }
