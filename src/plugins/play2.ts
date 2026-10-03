@@ -1,5 +1,5 @@
 import ytsearch from 'yt-search';
-import { Readable } from 'stream';
+import axios from 'axios';
 
 export const command = ['play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'];
 export const category = 'descargas';
@@ -28,16 +28,125 @@ const extractVideoId = (input: string): string | null => {
     return null;
 };
 
-const streamToBuffer = async (res: Response): Promise<Buffer> => {
-    if (!res.body) throw new Error('No body in response');
-    const reader = res.body.getReader();
-    const chunks: Uint8Array[] = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) chunks.push(value);
+const getApiCandidates = (cleanUrl: string) => [
+    `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`,
+    `https://api.ryuzei.xyz/download/ytvideo?url=${encodeURIComponent(cleanUrl)}`,
+    `https://api.ryuzei.xyz/ytvideo/v2?url=${encodeURIComponent(cleanUrl)}`
+];
+
+const isVideoBuffer = (buffer: Buffer): boolean => {
+    if (!buffer || buffer.length < 10 * 1024) return false;
+    const hex = buffer.subarray(0, 12).toString('hex');
+    if (hex.startsWith('00000018') || hex.startsWith('0000001c') || hex.startsWith('00000020')) return true;
+    if (buffer.subarray(4, 8).toString('ascii') === 'ftyp') return true;
+    if (hex.startsWith('1a45dfa3')) return true;
+    if (hex.startsWith('52494646')) return true;
+    if (hex.startsWith('4f676753')) return true;
+    return buffer.length > 100 * 1024;
+};
+
+const resolveDownload = async (downloadUrl: string): Promise<{ buffer: Buffer } | { redirectUrl: string } | null> => {
+    try {
+        const res = await axios.get(downloadUrl, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            maxRedirects: 5,
+            validateStatus: () => true,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': '*/*'
+            }
+        });
+
+        const contentType = String(res.headers['content-type'] || '').toLowerCase();
+        const finalUrl = res.request?.res?.responseUrl || downloadUrl;
+        const buffer = Buffer.from(res.data);
+
+        if (contentType.includes('application/json') || contentType.includes('text/html') || contentType.includes('text/plain')) {
+            try {
+                const parsed = JSON.parse(buffer.toString('utf8'));
+                const nextUrl = parsed?.data?.download || parsed?.download || parsed?.url || parsed?.data?.url;
+                if (nextUrl && typeof nextUrl === 'string' && nextUrl !== downloadUrl) {
+                    return { redirectUrl: nextUrl };
+                }
+            } catch {
+                const match = buffer.toString('utf8').match(/https?:\/\/[^\s"'<>]+/);
+                if (match && match[0] !== downloadUrl) {
+                    return { redirectUrl: match[0] };
+                }
+            }
+            if (finalUrl && finalUrl !== downloadUrl) {
+                return { redirectUrl: finalUrl };
+            }
+            return null;
+        }
+
+        if (isVideoBuffer(buffer)) {
+            return { buffer };
+        }
+
+        if (finalUrl && finalUrl !== downloadUrl) {
+            return { redirectUrl: finalUrl };
+        }
+
+        return null;
+    } catch (err: any) {
+        console.log('[PLAY2] Error resolviendo download:', err?.message || err);
+        return null;
     }
-    return Buffer.concat(chunks);
+};
+
+const fetchVideoBuffer = async (cleanUrl: string): Promise<{ buffer: Buffer; title?: string; image?: string; author?: string } | null> => {
+    const apis = getApiCandidates(cleanUrl);
+
+    for (const apiUrl of apis) {
+        try {
+            console.log('[PLAY2] Probando API:', apiUrl);
+
+            const { data } = await axios.get(apiUrl, {
+                timeout: 30000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+            });
+
+            if (!data?.status || !data?.data?.download) {
+                console.log('[PLAY2] API sin descarga válida:', apiUrl);
+                continue;
+            }
+
+            const info = data.data;
+
+            let resolved = await resolveDownload(info.download);
+
+            let attempts = 0;
+            while (resolved && 'redirectUrl' in resolved && attempts < 3) {
+                console.log('[PLAY2] Redirigiendo a:', resolved.redirectUrl);
+                resolved = await resolveDownload(resolved.redirectUrl);
+                attempts++;
+            }
+
+            if (!resolved || !('buffer' in resolved)) {
+                console.log('[PLAY2] No se pudo obtener buffer desde:', apiUrl);
+                continue;
+            }
+
+            console.log('[PLAY2] Descarga exitosa desde:', apiUrl);
+            return {
+                buffer: resolved.buffer,
+                title: info.title,
+                image: info.image,
+                author: info.author
+            };
+        } catch (err: any) {
+            console.log('[PLAY2] Falló API:', apiUrl, '-', err?.message || err);
+            continue;
+        }
+    }
+
+    return null;
 };
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
@@ -103,36 +212,33 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `ꨄ︎ ${global.nmcreador}`;
 
         if (thumb) {
-            fetch(thumb)
-                .then(r => r.arrayBuffer())
-                .then(b => sock.sendMessage(
+            try {
+                const thumbRes = await axios.get(thumb, { responseType: 'arraybuffer', timeout: 15000 });
+                await sock.sendMessage(
                     msg.from,
-                    { image: Buffer.from(b), caption: quickInfo },
+                    { image: Buffer.from(thumbRes.data), caption: quickInfo },
                     { quoted: msg }
-                ))
-                .catch(() => msg.reply(quickInfo));
+                );
+            } catch {
+                await msg.reply(quickInfo);
+            }
         } else {
-            msg.reply(quickInfo);
+            await msg.reply(quickInfo);
         }
 
-        const apiUrl = `https://api.ryuzei.xyz/download/ytvideo/v4?url=${encodeURIComponent(cleanUrl)}`;
-        const data: any = await fetch(apiUrl).then(r => r.json());
+        const result = await fetchVideoBuffer(cleanUrl);
 
-        if (!data?.status || !data?.data?.download) {
+        if (!result) {
             return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
         }
 
-        const info = data.data;
-        const title = info.title || quickTitle;
+        const title = result.title || quickTitle;
         const fileName = `${cleanTitle(title)}.mp4`;
-
-        const videoRes = await fetch(info.download);
-        const videoBuffer = await streamToBuffer(videoRes);
 
         await sock.sendMessage(
             msg.from,
             {
-                video: videoBuffer,
+                video: result.buffer,
                 mimetype: 'video/mp4',
                 fileName,
                 caption: title
@@ -141,7 +247,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         );
     } catch (error: any) {
         console.error('[PLAY2]', error?.message || error);
-        await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚛𝚛𝙸𝚘́ 𝚞𝚗 𝚎𝚛𝚛𝚘𝚛 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅𝙸𝙳𝙴𝙾`);
+        await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚛𝚛𝙸𝚘́ 𝚞𝚗 𝚎𝚛𝚛𝚘𝚛 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
     } finally {
         processing.delete(requestKey);
     }
