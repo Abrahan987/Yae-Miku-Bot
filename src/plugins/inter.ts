@@ -139,31 +139,53 @@ export default async function (sock: any, msg: any, extra: any) {
     const targetName = targetJid ? getNombre(targetJid) : senderName;
     const descripcion = captions[currentCommand](senderName, targetName);
 
-    const url = `${BASE_URL}?inter=${currentCommand}&key=${API_KEY}`;
-    const response = await axios.get(url, { timeout: 10000 });
+    // La API devuelve el archivo (video/gif) directamente, no un JSON
+    const response = await axios.get(BASE_URL, {
+      params: { inter: currentCommand, key: API_KEY },
+      responseType: 'arraybuffer',
+      timeout: 20000,
+    });
 
-    const gifUrl =
-      response.data?.url || response.data?.result?.url || response.data?.result;
+    const contentType = String(response.headers?.['content-type'] || '');
+    let buffer: Buffer = Buffer.from(response.data);
 
-    if (!gifUrl || typeof gifUrl !== 'string') {
-      return msg.reply(`⚠️ No pude obtener la imagen de ${currentCommand}. Intenta de nuevo.`);
+    // Por si algún día responde JSON con una url
+    if (contentType.includes('application/json')) {
+      const json = JSON.parse(buffer.toString('utf-8'));
+      const fileUrl = json?.url || json?.result?.url || json?.result;
+      if (!fileUrl || typeof fileUrl !== 'string') {
+        console.error('[INTER] Respuesta JSON inesperada:', json);
+        return msg.reply(`⚠️ La API no devolvió un archivo para *${currentCommand}*.`);
+      }
+      const file = await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 20000 });
+      buffer = Buffer.from(file.data);
+    }
+
+    if (!buffer.length) {
+      return msg.reply(`⚠️ La API devolvió un archivo vacío para *${currentCommand}*.`);
     }
 
     const caption = targetJid
       ? `🌸 *${senderName}* ${descripcion} *@${targetName}*`
       : `🌸 *${senderName}* ${descripcion}`;
 
-    const isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(gifUrl);
-
     return await sock.sendMessage(
       msg.chat,
-      isVideo
-        ? { video: { url: gifUrl }, gifPlayback: true, caption, mentions: targetJid ? [targetJid] : [] }
-        : { image: { url: gifUrl }, caption, mentions: targetJid ? [targetJid] : [] },
+      {
+        video: buffer,
+        gifPlayback: true,
+        caption,
+        mentions: targetJid ? [targetJid, sender] : [sender],
+      },
       { quoted: msg }
     );
   } catch (error: any) {
-    console.error('[INTER ERROR]:', error.message);
+    console.error(
+      '[INTER ERROR]:',
+      error?.response?.status || '',
+      error?.message,
+      error?.response?.data ? Buffer.from(error.response.data).toString('utf-8').slice(0, 300) : ''
+    );
     return msg.reply('⚠️ Error al traer la acción. Intenta de nuevo en unos momentos.');
   }
 }
