@@ -1,8 +1,23 @@
 export const command = ['kick', 'remove', 'out'];
 export const category = 'admin';
 export const description = 'Expulsa a un miembro del grupo.';
-export const admin = true;
-export const botAdmin = true;
+export const admin = false;
+export const botAdmin = false;
+
+const num = (x: any): string =>
+    String(x || '').split('@')[0].split(':')[0].replace(/[^\d]/g, '');
+
+function ids(p: any): string[] {
+    return [p?.id, p?.lid, p?.phoneNumber].map(num).filter(Boolean);
+}
+
+function findParticipant(participants: any[], ...jids: any[]): any {
+    const wanted = jids.map(num).filter(Boolean);
+    if (!wanted.length) return null;
+    return participants.find((p: any) => ids(p).some((i) => wanted.includes(i))) || null;
+}
+
+const isAdminP = (p: any) => p?.admin === 'admin' || p?.admin === 'superadmin';
 
 export default async function (sock: any, msg: any, extra: any) {
     if (!msg.isGroup) {
@@ -13,26 +28,27 @@ export default async function (sock: any, msg: any, extra: any) {
 
     try {
         const metadata = await sock.groupMetadata(chatId);
-        const participants = metadata?.participants || [];
+        const participants: any[] = metadata?.participants || [];
 
-        const botRawJid = sock.user?.id || '';
-        const botNumber = botRawJid.split(':')[0].split('@')[0];
+        const rawSender = msg.key?.participant || msg.sender;
+        const senderP = findParticipant(participants, msg.sender, rawSender);
+        const ownerNum = num((global as any).owner);
+        const esOwner = !!ownerNum && [msg.sender, rawSender].map(num).includes(ownerNum);
 
-        const botParticipant = participants.find((p: any) => {
-            const id = p.id || '';
-            const pNum = id.split(':')[0].split('@')[0];
-            return pNum === botNumber;
-        });
+        if (!isAdminP(senderP) && !extra?.isAdmin && !esOwner) {
+            return msg.reply('⚠️ Necesitas ser administrador del grupo para usar este comando.');
+        }
 
-        if (!botParticipant || !botParticipant.admin) {
+        const botP = findParticipant(participants, sock.user?.id, sock.user?.lid);
+
+        if (!isAdminP(botP) && !extra?.isBotAdmin) {
             return msg.reply(
                 `⚠️ No soy administrador\n\n` +
                 `🍥 Necesito ser administrador para expulsar a alguien.`
             );
         }
 
-        const mentions = msg.mentionedJid || [];
-        let targetJid = mentions[0];
+        let targetJid = (msg.mentionedJid || [])[0];
 
         if (!targetJid && msg.quoted) {
             targetJid = msg.quoted.sender;
@@ -41,26 +57,49 @@ export default async function (sock: any, msg: any, extra: any) {
         if (!targetJid) {
             return msg.reply(
                 `🍓 Uso\n\n` +
-                `> ${global.prefix?.[0] || '.'}kick @usuario\n` +
+                `> ${(global as any).prefix?.[0] || '.'}kick @usuario\n` +
                 `> O responde a su mensaje`
             );
         }
 
-        const targetParticipant = participants.find((p: any) => p.id === targetJid);
+        const targetP = findParticipant(participants, targetJid);
 
-        if (!targetParticipant) {
+        if (!targetP) {
             return msg.reply('⚠️ Este usuario no está en el grupo.');
         }
 
-        if (targetParticipant.admin) {
+        if (isAdminP(targetP)) {
             return msg.reply('⚠️ No puedo eliminar a un administrador.');
         }
 
-        await sock.groupParticipantsUpdate(chatId, [targetJid], 'remove');
+        const removeJid = targetP.id || targetJid;
 
-        const number = targetJid.split('@')[0];
+        await sock.groupParticipantsUpdate(chatId, [removeJid], 'remove');
+
+        const number = num(targetP.phoneNumber) || num(removeJid);
 
         return sock.sendMessage(
             chatId,
             {
-                text:\n                    `✅ *MIEMBRO EXPULSADO*\n\n` +\n                    `🪷 @${number} fue expulsado del grupo.`,\n                mentions: [targetJid]\n            },\n            { quoted: msg }\n        );\n    } catch (error: any) {\n        console.error('[KICK ERROR]:', error);\n\n        const status = error?.output?.statusCode || error?.data || error?.status;\n\n        if (status === 401 || status === 403 || status === 500) {\n            return msg.reply(\n                `⚠️ No pude ejecutar la acción.\n\n` +\n                `🍥 Verifica que el bot sea administrador.`\n            );\n        }\n\n        return msg.reply('⚠️ Ocurrió un error al expulsar al usuario.');\n    }\n}\n
+                text:
+                    `✅ *MIEMBRO EXPULSADO*\n\n` +
+                    `🪷 @${number} fue expulsado del grupo.`,
+                mentions: [removeJid]
+            },
+            { quoted: msg }
+        );
+    } catch (error: any) {
+        console.error('[KICK ERROR]:', error);
+
+        const status = error?.output?.statusCode || error?.data || error?.status;
+
+        if (status === 401 || status === 403 || status === 500) {
+            return msg.reply(
+                `⚠️ No pude ejecutar la acción.\n\n` +
+                `🍥 Verifica que el bot sea administrador.`
+            );
+        }
+
+        return msg.reply('⚠️ Ocurrió un error al expulsar al usuario.');
+    }
+}
