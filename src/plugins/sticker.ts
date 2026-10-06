@@ -176,10 +176,9 @@ export default async function (sock: any, msg: any, extra: any) {
         const customText = rest.filter((a) => !a.startsWith('-')).join(' ').trim();
         const parts = customText.split(/[•|]/).map((p) => p.trim()).filter(Boolean);
 
-        const packname = parts[0] || `🪷 ${nameBot}`;
+        const packname = parts[0] || `${nameBot}`;
         const author = parts[1] || `Creador: ${creador}\nUsuario: ${userName}`;
 
-        // Detectar media: mensaje actual o citado
         let media: any = null;
         let mediaType = '';
         let mime = '';
