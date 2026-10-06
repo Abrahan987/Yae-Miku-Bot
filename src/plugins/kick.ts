@@ -6,7 +6,7 @@ export const botAdmin = true;
 
 export default async function (sock: any, msg: any, extra: any) {
     if (!msg.isGroup) {
-        return msg.reply('🍓 𝙴𝚂𝚃𝙴 𝙲𝙾𝙼𝙰𝙽𝙳𝙾 𝚂𝙾𝙻𝙾 𝙵𝚄𝙽𝙲𝙸𝙾𝙽𝙰 𝙴𝙽 𝙶𝚁𝚄𝙿𝙾𝚂.');
+        return msg.reply('🪷 𝙴𝚂𝚃𝙴 𝙲𝙾𝙼𝙰𝙽𝙳𝙾 𝚂𝙾𝙻𝙾 𝙵𝚄𝙽𝙲𝙸𝙾𝙽𝙰 𝙴𝙽 𝙶𝚁𝚄𝙿𝙾𝚂.');
     }
 
     const chatId = msg.from || msg.chat || extra?.chat;
@@ -39,7 +39,7 @@ export default async function (sock: any, msg: any, extra: any) {
 
         if (!targetJid) {
             return msg.reply(
-                `🍓 𝚄𝚂𝙾\n\n` +
+                `🪷 𝚄𝚂𝙾\n\n` +
                 `> ${global.prefix[0]}kick @usuario\n` +
                 `> Responde a su mensaje`
             );
@@ -63,8 +63,8 @@ export default async function (sock: any, msg: any, extra: any) {
             chatId,
             {
                 text:
-                    `🍓͜ᩧ𑂳ᰍ  𝙼𝙸𝙴𝙼𝙱𝚁𝙾 𝙴𝚇𝙿𝚄𝙻𝚂𝙰𝙳𝙾\n\n` +
-                    `🪷 @${number}`,
+                    `🪷 𝙼𝙸𝙴𝙼𝙱𝚁𝙾 𝙴𝚇𝙿𝚄𝙻𝚂𝙰𝙳𝙾\n\n` +
+                    `✅ @${number}`,
                 mentions: [targetJid]
             },
             { quoted: msg }

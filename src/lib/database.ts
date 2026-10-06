@@ -42,6 +42,13 @@ export async function loadDB() {
             message_count INTEGER DEFAULT 0,
             PRIMARY KEY (groupJid, userJid)
         );
+
+        CREATE TABLE IF NOT EXISTS cooldowns (
+            userJid TEXT NOT NULL,
+            action TEXT NOT NULL,
+            last_used INTEGER DEFAULT 0,
+            PRIMARY KEY (userJid, action)
+        );
     `);
 }
 
@@ -275,6 +282,23 @@ export function resetWarnings(
     );
 
     return 0;
+}
+
+export function getCooldown(userJid: string, action: string): number {
+    const row = db.prepare(
+        'SELECT last_used FROM cooldowns WHERE userJid = ? AND action = ?'
+    ).get(userJid, action) as any;
+
+    return row ? Number(row.last_used) : 0;
+}
+
+export function setCooldown(userJid: string, action: string, time: number = Date.now()) {
+    db.prepare(`
+        INSERT INTO cooldowns (userJid, action, last_used)
+        VALUES (?, ?, ?)
+        ON CONFLICT(userJid, action)
+        DO UPDATE SET last_used = excluded.last_used
+    `).run(userJid, action, time);
 }
 
 export { db };

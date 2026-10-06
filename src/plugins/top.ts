@@ -2,28 +2,16 @@ import { getTopActive } from '../lib/database.ts';
 
 export const command = ['top'];
 export const category = 'info';
-export const description = 'Muestra los 10 usuarios más activos según el mensaje que envíes.';
+export const description = 'Muestra el top 10 de usuarios más activos por mensajes.';
 export const admin = false;
 export const botAdmin = false;
 
 export default async function (sock: any, msg: any, extra: any) {
     if (!msg.isGroup) {
-        return msg.reply('🍓 𝙴𝚂𝚝𝚎 𝚌𝚘𝚖𝚊𝚗𝚍𝚘 𝚜𝚘𝚕𝚘 𝚏𝚞𝚗𝚌𝚒𝚘𝚗𝚊 𝚎𝚗 𝚐𝚛𝚞𝚙𝚘𝚜.');
+        return msg.reply('🪷 𝙴𝚂𝚝𝚎 𝚌𝚘𝚖𝚊𝚗𝚍𝚘 𝚜𝚘𝚕𝚘 𝚏𝚞𝚗𝚌𝚒𝚘𝚗𝚊 𝚎𝚗 𝚐𝚛𝚞𝚙𝚘𝚜.');
     }
 
     const chatId = msg.from || msg.chat || extra?.chat;
-    const text = (extra?.text || '').trim();
-
-    if (!text) {
-        return msg.reply(
-            `🍓 𝚄𝚜𝚘: .𝚝𝚘𝚙 + 𝚝𝚎𝚡𝚝𝚘\n\n` +
-            `𝙰𝙷𝙾𝚁𝙰 𝙿𝚘𝚍𝚛𝚊́𝚜 𝚞𝚜𝚊𝚛\n` +
-            `• .𝚝𝚘𝚙 𝚟𝚎𝚛𝚐𝚊\n` +
-            `• .𝚝𝚘𝚙 𝚛𝚎𝚞𝚗𝚒𝚘𝚗\n` +
-            `• .𝚝𝚘𝚙 𝚋𝚞𝚎𝚗𝚞𝚜 𝚊𝚖𝚘𝚛 𝚕𝚎𝚖𝚊\n` +
-            `• .𝚝𝚘𝚙 𝙿𝚕𝚊𝚝𝚒𝚌𝚊`
-        );
-    }
 
     try {
         const topUsers = getTopActive(chatId, 10);
@@ -32,7 +20,7 @@ export default async function (sock: any, msg: any, extra: any) {
             return msg.reply('⚠︎ 𝙽𝚘 𝚑𝚊𝚢 𝚍𝚊𝚝𝚘𝚜 𝚍𝚎 𝚖𝚎𝚗𝚜𝚊𝚓𝚎𝚜.');
         }
 
-        let messageText = `🍓͜ᩧ𑂳ᰍ  𝚃𝙾𝙿 10 - ${text.toUpperCase()}\n\n`;
+        let messageText = `🪷 𝚃𝙾𝙿 10 𝙼Á𝚂 𝙰𝙲𝚃𝙸𝚅𝙾𝚂\n\n`;
 
         topUsers.forEach((user: any, index: number) => {
             const position = index + 1;
@@ -44,8 +32,10 @@ export default async function (sock: any, msg: any, extra: any) {
             else if (position <= 10) medal = '⭐';
 
             const jid = user.jid || '';
-            messageText += `${medal} #${position} • @${jid.split('@')[0]}\n`;
+            messageText += `${medal} #${position} • @${jid.split('@')[0]} • ${user.message_count} 𝚖𝚎𝚗𝚜𝚊𝚓𝚎𝚜\n`;
         });
+
+        messageText += `\n✅ 𝚃𝚘𝚝𝚊𝚕: ${topUsers.length} 𝚞𝚜𝚞𝚊𝚛𝚒𝚘𝚜`;
 
         return sock.sendMessage(
             chatId,
