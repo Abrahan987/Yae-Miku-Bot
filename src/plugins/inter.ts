@@ -165,9 +165,10 @@ export default async function (sock: any, msg: any, extra: any) {
       return msg.reply(`⚠️ La API devolvió un archivo vacío para *${currentCommand}*.`);
     }
 
-    const caption = targetJid
-      ? `🌸 *@{senderName}* ${descripcion} *@${targetName}*`
+     const caption = targetJid
+      ? `🌸 *${senderName}* ${descripcion} *@${targetName}*`
       : `🌸 *${senderName}* ${descripcion}`;
+
 
     return await sock.sendMessage(
       msg.chat,
