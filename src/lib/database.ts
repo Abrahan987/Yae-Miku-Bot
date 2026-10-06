@@ -42,6 +42,13 @@ export async function loadDB() {
             message_count INTEGER DEFAULT 0,
             PRIMARY KEY (groupJid, userJid)
         );
+
+        CREATE TABLE IF NOT EXISTS economy_cooldowns (
+            userJid TEXT NOT NULL,
+            action TEXT NOT NULL,
+            until_time INTEGER DEFAULT 0,
+            PRIMARY KEY (userJid, action)
+        );
     `);
 }
 
@@ -275,6 +282,22 @@ export function resetWarnings(
     );
 
     return 0;
+}
+
+// ECONOMIA - Cooldowns
+export function getCooldown(userJid: string, action: string): number {
+    const row = db
+        .prepare('SELECT until_time FROM economy_cooldowns WHERE userJid = ? AND action = ?')
+        .get(userJid, action) as any;
+    return row ? Number(row.until_time) : 0;
+}
+
+export function setCooldown(userJid: string, action: string, untilTime: number): void {
+    db.prepare(`
+        INSERT INTO economy_cooldowns (userJid, action, until_time)
+        VALUES (?, ?, ?)
+        ON CONFLICT(userJid, action) DO UPDATE SET until_time = excluded.until_time
+    `).run(userJid, action, untilTime);
 }
 
 export { db };
