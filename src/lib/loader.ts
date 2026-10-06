@@ -99,7 +99,25 @@ export async function loadPlugins(dir = '../plugins') {
                         commandMap.set(cmd, handlerFn);
                     }
 
-                    if (commands.length) {
+                    // Si el plugin exporta `menu`, cada entrada aparece por separado en el menú
+                    const menuEntries: { command: string[]; description: string }[] | undefined =
+                        Array.isArray(cmdModule.menu) ? cmdModule.menu : undefined;
+
+                    if (menuEntries && menuEntries.length) {
+                        menuEntries.forEach((entry, i) => {
+                            const entryCmds = (entry.command || [])
+                                .filter(Boolean)
+                                .map((c: any) => String(c).toLowerCase());
+
+                            if (!entryCmds.length) return;
+
+                            pluginData.set(`${fullPath}#${i}`, {
+                                commands: entryCmds,
+                                category: String(category).toLowerCase(),
+                                description: String(entry.description || description)
+                            });
+                        });
+                    } else if (commands.length) {
                         pluginData.set(fullPath, {
                             commands,
                             category: String(category).toLowerCase(),
