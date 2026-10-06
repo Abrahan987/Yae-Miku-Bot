@@ -166,7 +166,7 @@ export default async function (sock: any, msg: any, extra: any) {
     }
 
     const caption = targetJid
-      ? `🌸 *${senderName}* ${descripcion} *@${targetName}*`
+      ? `🌸 *@${targetName}* ${descripcion} *@${targetName}*`
       : `🌸 *${senderName}* ${descripcion}`;
 
     return await sock.sendMessage(
