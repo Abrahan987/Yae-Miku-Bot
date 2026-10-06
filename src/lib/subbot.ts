@@ -1,25 +1,33 @@
 import fs from 'fs';
 import path from 'path';
-import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
+import pino from 'pino';
+import makeWASocket, {
+    useMultiFileAuthState,
+    fetchLatestBaileysVersion,
+    makeCacheableSignalKeyStore,
+    DisconnectReason,
+    Browsers
+} from '@whiskeysockets/baileys';
 import qrcode from 'qrcode';
-import type { WASocket } from '@whiskeysockets/baileys';
 
 const subsDir = path.join(process.cwd(), 'subs');
 if (!fs.existsSync(subsDir)) fs.mkdirSync(subsDir, { recursive: true });
 
+const logger = pino({ level: 'silent' }) as any;
+
 export interface SubBotConfig {
     phone: string;
     isCode: boolean;
-    sender: string;
-    mainSocket: WASocket;
+    mainSocket: any;
     mainChat: string;
     mainMsg: any;
 }
 
 const activeBots = new Map<string, any>();
-const botSessions = new Map<string, { createdAt: number; phone: string }>();
+const connecting = new Set<string>();
+const retries = new Map<string, number>();
 
-function normalizePhone(input: string): string {
+export function normalizePhone(input: string): string {
     let s = String(input).replace(/\D/g, '');
     if (!s) return '';
     if (s.startsWith('0')) s = s.replace(/^0+/, '');
@@ -33,171 +41,183 @@ function cleanJid(jid: string = ''): string {
     return jid.replace(/:\d+/, '').split('@')[0];
 }
 
-export async function getLatestVersion(): Promise<any> {
+async function getVersion(): Promise<any> {
     try {
         const { version } = await fetchLatestBaileysVersion();
         return version;
-    } catch (e) {
+    } catch {
         return [2, 3000, 1033105955];
     }
 }
 
-export async function startSubBot(config: SubBotConfig): Promise<any> {
-    const { phone, isCode, mainSocket, mainChat, mainMsg } = config;
-    const phoneNorm = normalizePhone(phone);
+function deleteLater(sock: any, chat: string, key: any, ms = 60000) {
+    if (!key) return;
+    setTimeout(() => {
+        sock.sendMessage(chat, { delete: key }).catch(() => {});
+    }, ms);
+}
 
-    if (!phoneNorm) {
-        throw new Error('Número de teléfono inválido.');
+export async function startSubBot(config: SubBotConfig): Promise<void> {
+    const { isCode, mainSocket, mainChat, mainMsg } = config;
+    const phone = normalizePhone(config.phone);
+
+    if (!phone) throw new Error('No se pudo obtener tu número.');
+    if (activeBots.has(phone) || connecting.has(phone)) {
+        throw new Error('Ya tienes un sub-bot activo o en proceso de vinculación.');
     }
 
-    if (activeBots.has(phoneNorm)) {
-        throw new Error(`🪷 El sub-bot ${phoneNorm} ya está activo.`);
-    }
+    connecting.add(phone);
 
-    const sessionPath = path.join(subsDir, phoneNorm);
-    if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath, { recursive: true });
+    const sessionPath = path.join(subsDir, phone);
+    fs.mkdirSync(sessionPath, { recursive: true });
 
-    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
-    const version = await getLatestVersion();
+    const sentKeys: any[] = [];
+    let pairingSent = false;
 
-    let qrSent = false;
-    let codeSent = false;
-    let messageToDelete: any = null;
+    const connect = async (): Promise<void> => {
+        const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+        const version = await getVersion();
 
-    const subbot: any = makeWASocket({
-        version,
-        browser: Browsers.macOS('Safari'),
-        auth: state,
-        printQRInTerminal: false,
-        markOnlineOnConnect: false,
-        syncFullHistory: false,
-        fireInitQueries: false,
-        generateHighQualityLinkPreview: false,
-    });
+        const sock: any = makeWASocket({
+            version,
+            logger,
+            browser: Browsers.macOS('Safari'),
+            printQRInTerminal: false,
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore(state.keys, logger)
+            },
+            markOnlineOnConnect: false,
+            syncFullHistory: false,
+            fireInitQueries: false,
+            generateHighQualityLinkPreview: false,
+            getMessage: async () => undefined
+        });
 
-    subbot.ev.on('creds.update', saveCreds);
+        sock.ev.on('creds.update', saveCreds);
 
-    subbot.ev.on('connection.update', async (update: any) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        if (connection === 'open') {
-            const botJid = subbot.user?.id || '';
-            const botNumber = cleanJid(botJid);
-
-            activeBots.set(phoneNorm, subbot);
-            botSessions.set(phoneNorm, { createdAt: Date.now(), phone: phoneNorm });
-
-            console.log(`[SUB-BOT] ✿ Conectado: ${botNumber}`);
-
-            if (messageToDelete) {
+        // Código de 8 dígitos
+        if (isCode && !state.creds.registered && !pairingSent) {
+            pairingSent = true;
+            setTimeout(async () => {
                 try {
-                    await mainSocket.sendMessage(mainChat, { delete: messageToDelete.key });
-                } catch (e) {}
+                    const raw: string = await sock.requestPairingCode(phone);
+                    const code = raw?.match(/.{1,4}/g)?.join('-') || raw;
+
+                    const info = await mainSocket.sendMessage(
+                        mainChat,
+                        {
+                            text:
+                                `🪷 *𝗦𝗨𝗕-𝗕𝗢𝗧 • 𝗖𝗢́𝗗𝗜𝗚𝗢*\n` +
+                                `─────── ❀ ───────\n\n` +
+                                `🍓 Abre WhatsApp en el número *${phone}*\n` +
+                                `> 1. Toca los *3 puntos*\n` +
+                                `> 2. *Dispositivos vinculados*\n` +
+                                `> 3. *Vincular con el número de teléfono*\n` +
+                                `> 4. Ingresa el código que te envío abajo 👇\n\n` +
+                                `⏳ Expira en 1 minuto`
+                        },
+                        { quoted: mainMsg }
+                    );
+                    const codeMsg = await mainSocket.sendMessage(mainChat, { text: code }, { quoted: mainMsg });
+
+                    sentKeys.push(info?.key, codeMsg?.key);
+                    deleteLater(mainSocket, mainChat, info?.key);
+                    deleteLater(mainSocket, mainChat, codeMsg?.key);
+                } catch (e) {
+                    console.error('[SUBBOT CODE ERROR]', e);
+                    connecting.delete(phone);
+                    try { sock.end?.(new Error('code failed')); } catch {}
+                    mainSocket.sendMessage(mainChat, { text: '⚠️ No se pudo generar el código. Intenta de nuevo.' }, { quoted: mainMsg }).catch(() => {});
+                }
+            }, 3000);
+        }
+
+        sock.ev.on('connection.update', async (update: any) => {
+            const { connection, lastDisconnect, qr } = update;
+
+            // QR
+            if (qr && !isCode) {
+                try {
+                    const buffer = await qrcode.toBuffer(qr, { scale: 8 });
+                    const qrMsg = await mainSocket.sendMessage(
+                        mainChat,
+                        {
+                            image: buffer,
+                            caption:
+                                `🪷 *𝗦𝗨𝗕-𝗕𝗢𝗧 • 𝗤𝗥*\n` +
+                                `─────── ❀ ───────\n\n` +
+                                `🍓 Escanea este QR desde *Dispositivos vinculados*\n` +
+                                `⏳ Expira en 1 minuto`
+                        },
+                        { quoted: mainMsg }
+                    );
+                    sentKeys.push(qrMsg?.key);
+                    deleteLater(mainSocket, mainChat, qrMsg?.key, 45000);
+                } catch (e) {
+                    console.error('[SUBBOT QR ERROR]', e);
+                }
             }
 
-            try {
-                await mainSocket.sendMessage(
+            if (connection === 'open') {
+                connecting.delete(phone);
+                retries.delete(phone);
+                activeBots.set(phone, sock);
+                console.log(`[SUB-BOT] Conectado: ${cleanJid(sock.user?.id)}`);
+
+                mainSocket.sendMessage(
                     mainChat,
                     {
-                        text: `🪷 *SUB-BOT CONECTADO*\n\n` +
-                            `✓ Número: *${botNumber}*\n` +
-                            `✓ Estado: *ACTIVO*\n` +
-                            `✓ Hora: *${new Date().toLocaleTimeString()}*\n\n` +
-                            `📌 El sub-bot ya está listo para usar.`
+                        text:
+                            `✅ *SUB-BOT CONECTADO*\n\n` +
+                            `🪷 Número: *${cleanJid(sock.user?.id)}*\n` +
+                            `📌 Ya quedó vinculado.`
                     },
                     { quoted: mainMsg }
-                );
-            } catch (e) {}
-        }
-
-        if (connection === 'close') {
-            const reason = (lastDisconnect?.error as any)?.output?.statusCode;
-            activeBots.delete(phoneNorm);
-            botSessions.delete(phoneNorm);
-            console.log(`[SUB-BOT] ✿ Desconectado: ${phoneNorm} (código ${reason})`);
-        }
-
-        if (qr && !isCode && !qrSent) {
-            try {
-                qrSent = true;
-                const qrBuffer = await qrcode.toBuffer(qr, { scale: 8 });
-                const sentMsg = await mainSocket.sendMessage(
-                    mainChat,
-                    {
-                        image: qrBuffer,
-                        caption: `🪷 *ESCANEA EL QR*\n\n` +
-                            `🍓 Número: *${phoneNorm}*\n\n` +
-                            `📌 Escanea este código en WhatsApp\n` +
-                            `📌 Se eliminará en 1 minuto`
-                    },
-                    { quoted: mainMsg }
-                );
-                messageToDelete = sentMsg;
-                setTimeout(() => {
-                    if (messageToDelete) {
-                        mainSocket.sendMessage(mainChat, { delete: messageToDelete.key }).catch(() => {});
-                    }
-                }, 60000);
-            } catch (e) {
-                console.error('[QR ERROR]', e);
+                ).catch(() => {});
             }
-        }
 
-        if (qr && isCode && !codeSent) {
-            try {
-                codeSent = true;
-                const rawCode: string = await subbot.requestPairingCode(phoneNorm);
-                const chunks = rawCode.match(/.{1,4}/g);
-                const codeGen = chunks ? chunks.join('-') : rawCode;
+            if (connection === 'close') {
+                const code = (lastDisconnect?.error as any)?.output?.statusCode;
+                activeBots.delete(phone);
 
-                const sentMsg = await mainSocket.sendMessage(
-                    mainChat,
-                    {
-                        text: `🪷 *CÓDIGO DE EMPAREJAMIENTO*\n\n` +
-                            `🍓 Número: *${phoneNorm}*\n\n` +
-                            `\`\`\`${codeGen}\`\`\`\n\n` +
-                            `📌 Ingresa este código en WhatsApp\n` +
-                            `📌 Se eliminará en 1 minuto`
-                    },
-                    { quoted: mainMsg }
-                );
-                messageToDelete = sentMsg;
-                setTimeout(() => {
-                    if (messageToDelete) {
-                        mainSocket.sendMessage(mainChat, { delete: messageToDelete.key }).catch(() => {});
-                    }
-                }, 60000);
-            } catch (e) {
-                console.error('[CODE ERROR]', e);
+                if (code === DisconnectReason.loggedOut) {
+                    connecting.delete(phone);
+                    try { fs.rmSync(sessionPath, { recursive: true, force: true }); } catch {}
+                    return;
+                }
+
+                // 515 = reinicio requerido tras vincular, y otras desconexiones: reconectar
+                const n = (retries.get(phone) || 0) + 1;
+                retries.set(phone, n);
+                if (n > 8) {
+                    connecting.delete(phone);
+                    retries.delete(phone);
+                    return;
+                }
+                try { sock.ev.removeAllListeners(); } catch {}
+                setTimeout(() => connect().catch((e) => console.error('[SUBBOT RECONNECT]', e)), 2000);
             }
-        }
-    });
+        });
+    };
 
-    return subbot;
+    await connect();
 }
 
 export function getActiveBots(): Map<string, any> {
     return activeBots;
 }
 
-export function getBotSessions(): Map<string, any> {
-    return botSessions;
+export function listActiveBots(): string[] {
+    return Array.from(activeBots.keys());
 }
 
 export function removeSubBot(phone: string) {
-    const phoneNorm = normalizePhone(phone);
-    const bot = activeBots.get(phoneNorm);
+    const p = normalizePhone(phone);
+    const bot = activeBots.get(p);
     if (bot) {
-        try {
-            bot.ev.removeAllListeners();
-            bot.ws?.close();
-            bot.end?.(new Error('disconnected'));
-        } catch (e) {}
-        activeBots.delete(phoneNorm);
+        try { bot.ev.removeAllListeners(); bot.ws?.close(); } catch {}
     }
-    botSessions.delete(phoneNorm);
-}
-
-export function listActiveBots(): string[] {
-    return Array.from(activeBots.keys());
+    activeBots.delete(p);
+    connecting.delete(p);
 }
