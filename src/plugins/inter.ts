@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_KEY = 'oyectsV2';';
+const API_KEY = 'proyectsV2';
 const BASE_URL = 'https://api.stellarwa.xyz/sfw/interaction';
 
 const captions: Record<string, (from: string, to: string) => string> = {
