@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
-import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode';
 import type { WASocket } from '@whiskeysockets/baileys';
 
@@ -34,7 +33,7 @@ function cleanJid(jid: string = ''): string {
     return jid.replace(/:\d+/, '').split('@')[0];
 }
 
-export async function getLatestVersion() {
+export async function getLatestVersion(): Promise<any> {
     try {
         const { version } = await fetchLatestBaileysVersion();
         return version;
@@ -44,7 +43,7 @@ export async function getLatestVersion() {
 }
 
 export async function startSubBot(config: SubBotConfig): Promise<any> {
-    const { phone, isCode, sender, mainSocket, mainChat, mainMsg } = config;
+    const { phone, isCode, mainSocket, mainChat, mainMsg } = config;
     const phoneNorm = normalizePhone(phone);
 
     if (!phoneNorm) {
@@ -65,7 +64,7 @@ export async function startSubBot(config: SubBotConfig): Promise<any> {
     let codeSent = false;
     let messageToDelete: any = null;
 
-    const subbot = makeWASocket({
+    const subbot: any = makeWASocket({
         version,
         browser: Browsers.macOS('Safari'),
         auth: state,
@@ -78,7 +77,7 @@ export async function startSubBot(config: SubBotConfig): Promise<any> {
 
     subbot.ev.on('creds.update', saveCreds);
 
-    subbot.ev.on('connection.update', async (update) => {
+    subbot.ev.on('connection.update', async (update: any) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (connection === 'open') {
@@ -112,7 +111,7 @@ export async function startSubBot(config: SubBotConfig): Promise<any> {
         }
 
         if (connection === 'close') {
-            const reason = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.reason;
+            const reason = (lastDisconnect?.error as any)?.output?.statusCode;
             activeBots.delete(phoneNorm);
             botSessions.delete(phoneNorm);
             console.log(`[SUB-BOT] ✿ Desconectado: ${phoneNorm} (código ${reason})`);
@@ -147,9 +146,9 @@ export async function startSubBot(config: SubBotConfig): Promise<any> {
         if (qr && isCode && !codeSent) {
             try {
                 codeSent = true;
-                const codeGen = (await subbot.requestPairingCode(phoneNorm))
-                    .match(/.{1,4}/g)?
-                    .join('-') || qr;
+                const rawCode: string = await subbot.requestPairingCode(phoneNorm);
+                const chunks = rawCode.match(/.{1,4}/g);
+                const codeGen = chunks ? chunks.join('-') : rawCode;
 
                 const sentMsg = await mainSocket.sendMessage(
                     mainChat,
