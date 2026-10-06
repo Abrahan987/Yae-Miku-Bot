@@ -1,6 +1,6 @@
 import { db } from '../lib/database.ts';
 
-export const command = ['rank', 'ranking', 'top'];
+export const command = ['rank', 'ranking'];
 export const category = 'economia';
 export const description = 'Ver ranking de los más ricos del grupo.';
 export const admin = false;
