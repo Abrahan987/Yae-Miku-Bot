@@ -2,7 +2,7 @@ import { getUser, updateUser, getCooldown, setCooldown } from '../lib/database.t
 
 export const command = ['bet', 'apostar'];
 export const category = 'economia';
-export const description = 'Apostar dinero (50/50 de ganar el doble).';
+export const description = 'Apostar dinero.';
 export const admin = false;
 export const botAdmin = false;
 
