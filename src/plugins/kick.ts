@@ -73,17 +73,16 @@ export default async function (sock: any, msg: any, extra: any) {
         }
 
         const removeJid = targetP.id || targetJid;
+        const nombre = targetP.pushName || `@${num(removeJid)}`;
 
         await sock.groupParticipantsUpdate(chatId, [removeJid], 'remove');
-
-        const number = num(targetP.phoneNumber) || num(removeJid);
 
         return sock.sendMessage(
             chatId,
             {
                 text:
                     `✅ *MIEMBRO EXPULSADO*\n\n` +
-                    `🪷 @${number} fue expulsado del grupo.`,
+                    `🪷 ${nombre} fue expulsado del grupo.`,
                 mentions: [removeJid]
             },
             { quoted: msg }
