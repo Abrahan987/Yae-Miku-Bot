@@ -1,4 +1,4 @@
-import { getUser } from '../lib/database.ts';
+import { getUser, updateUser, getCooldown, setCooldown } from '../lib/database.ts';
 
 export const command = ['balance', 'bal', 'saldo', 'dinero'];
 export const category = 'economia';
@@ -15,12 +15,12 @@ export default async function (sock: any, msg: any, extra: any) {
         const displayName = user.name || target.split('@')[0];
 
         return msg.reply(
-            `🪷 𝙱𝙰𝙻𝙰𝙽𝙲𝙴 𝙳𝙴 𝚈𝙴𝙽\n\n` +
-            `👤 𝚄𝚜𝚞𝚊𝚛𝚒𝚘: *${displayName}*\n` +
-            `💰 𝚃𝚊𝚕𝚍𝚘: *¥${(user.yen || 0).toLocaleString()}*`
+            `💰 *SALDO DE YEN*\n\n` +
+            `🪷 Usuario: *${displayName}*\n` +
+            `💵 Dinero: *¥${(user.yen || 0).toLocaleString()}*`
         );
     } catch (error: any) {
         console.error('[BALANCE ERROR]:', error);
-        return msg.reply('⚠︎ 𝙾𝚌𝚞𝚛𝚛𝚒ó 𝚞𝚗 𝚎𝚛𝚛𝚘𝚛 𝚊𝚕 𝚟𝚎𝚛 𝚝𝚞 𝚜𝚊𝚕𝚍𝚘.');
+        return msg.reply('⚠️ Ocurrió un error al obtener tu saldo.');
     }
 }

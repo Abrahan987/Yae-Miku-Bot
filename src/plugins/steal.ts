@@ -6,6 +6,19 @@ export const description = 'Intenta robar yen a otro usuario.';
 export const admin = false;
 export const botAdmin = false;
 
+function formatTime(ms: number): string {
+    const totalSec = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    
+    const parts: string[] = [];
+    if (hours) parts.push(`${hours}h`);
+    if (mins) parts.push(`${mins}m`);
+    if (secs || parts.length === 0) parts.push(`${secs}s`);
+    return parts.join(' ');
+}
+
 export default async function (sock: any, msg: any, extra: any) {
     if (!msg.isGroup) {
         return msg.reply('🍓 Este comando solo funciona en grupos.');
@@ -18,9 +31,12 @@ export default async function (sock: any, msg: any, extra: any) {
         const until = getCooldown(sender, 'steal');
 
         if (now < until) {
-            const timeLeft = Math.ceil((until - now) / 1000 / 60);
+            const timeLeft = formatTime(until - now);
             return msg.reply(
-                `⚠︎ Ya intentaste robar.\n\n🪷 Espera *${timeLeft} minutos*`
+                `⏱️ *COOLDOWN ACTIVO*\n\n` +
+                `🍥 Ya intentaste robar recientemente.\n` +
+                `⏳ Espera: *${timeLeft}*\n\n` +
+                `📌 Los robos son peligrosos, espera antes de intentar de nuevo.`
             );
         }
 
@@ -28,19 +44,21 @@ export default async function (sock: any, msg: any, extra: any) {
 
         if (!target) {
             return msg.reply(
-                `🍓 Uso:\n\n> ${global.prefix[0]}steal @usuario\n> O responde a su mensaje`
+                `🍓 *USO*\n\n` +
+                `> ${global.prefix[0]}steal @usuario\n` +
+                `> O responde a su mensaje`
             );
         }
 
         if (sender === target) {
-            return msg.reply('⚠︎ No puedes robarte a ti mismo.');
+            return msg.reply('⚠️ No puedes robarte a ti mismo.');
         }
 
         const sender_user = getUser(sender);
         const target_user = getUser(target);
 
         if ((target_user.yen || 0) < 1000) {
-            return msg.reply('⚠︎ Ese usuario tiene muy poco dinero.');
+            return msg.reply('⚠️ Ese usuario tiene muy poco dinero para robar.');
         }
 
         const chance = Math.random();
@@ -66,7 +84,11 @@ export default async function (sock: any, msg: any, extra: any) {
             });
 
             return msg.reply(
-                `✅ Robo exitoso\n\n🪷 Le robaste *¥${stolen.toLocaleString()}* a @${targetNumber}\n💰 Tu saldo: *¥${newSenderBalance.toLocaleString()}*`
+                `✅ *ROBO EXITOSO*\n\n` +
+                `🪷 Le robaste *¥${stolen.toLocaleString()}* a @${targetNumber}\n` +
+                `💰 Tu saldo: *¥${newSenderBalance.toLocaleString()}*\n` +
+                `⏳ Próximo robo en: *2 horas*\n\n` +
+                `📌 ¡Suerte en tu próximo robo!`
             );
         } else {
             const loss = Math.floor(Math.random() * (2000 - 500 + 1)) + 500;
@@ -79,11 +101,16 @@ export default async function (sock: any, msg: any, extra: any) {
             });
 
             return msg.reply(
-                `⚠︎ El robo fracasó\n\n🪷 Perdiste *¥${loss.toLocaleString()}* en el intento\n💰 Tu saldo: *¥${newSenderBalance.toLocaleString()}*`
+                `❌ *ROBO FALLIDO*\n\n` +
+                `🍥 Fuiste atrapado en el intento...\n` +
+                `💸 Perdiste *¥${loss.toLocaleString()}*\n` +
+                `💰 Tu saldo: *¥${newSenderBalance.toLocaleString()}*\n` +
+                `⏳ Próximo intento en: *2 horas*\n\n` +
+                `📌 Ten más cuidado la próxima vez.`
             );
         }
     } catch (error: any) {
         console.error('[STEAL ERROR]:', error);
-        return msg.reply('⚠︎ Ocurrió un error al robar.');
+        return msg.reply('⚠️ Ocurrió un error al robar.');
     }
 }

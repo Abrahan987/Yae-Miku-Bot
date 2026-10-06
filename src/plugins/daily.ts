@@ -6,6 +6,21 @@ export const description = 'Reclama tu recompensa diaria de yen.';
 export const admin = false;
 export const botAdmin = false;
 
+function formatTime(ms: number): string {
+    const totalSec = Math.floor(ms / 1000);
+    const days = Math.floor(totalSec / 86400);
+    const hours = Math.floor((totalSec % 86400) / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    
+    const parts: string[] = [];
+    if (days) parts.push(`${days}d`);
+    if (hours) parts.push(`${hours}h`);
+    if (mins) parts.push(`${mins}m`);
+    if (secs || parts.length === 0) parts.push(`${secs}s`);
+    return parts.join(' ');
+}
+
 export default async function (sock: any, msg: any, extra: any) {
     const sender = msg.sender;
 
@@ -14,9 +29,12 @@ export default async function (sock: any, msg: any, extra: any) {
         const until = getCooldown(sender, 'daily');
 
         if (now < until) {
-            const timeLeft = Math.ceil((until - now) / 1000 / 60);
+            const timeLeft = formatTime(until - now);
             return msg.reply(
-                `⚠︎ Ya reclamaste tu daily.\n\n🪷 Vuelve en *${timeLeft} minutos*`
+                `⏱️ *COOLDOWN ACTIVO*\n\n` +
+                `🪷 Ya reclamaste tu daily.\n` +
+                `⏳ Vuelve en: *${timeLeft}*\n\n` +
+                `📌 No intentes de nuevo, espera el tiempo indicado.`
             );
         }
 
@@ -28,10 +46,14 @@ export default async function (sock: any, msg: any, extra: any) {
         setCooldown(sender, 'daily', now + 24 * 60 * 60 * 1000);
 
         return msg.reply(
-            `✅ Recompensa diaria\n\n🪷 Ganaste *¥${reward.toLocaleString()}*\n💰 Saldo: *¥${newBalance.toLocaleString()}*`
+            `✅ *RECOMPENSA DIARIA*\n\n` +
+            `🪷 ¡Ganaste tu recompensa!\n` +
+            `💰 Dinero: *+¥${reward.toLocaleString()}*\n` +
+            `🏦 Saldo total: *¥${newBalance.toLocaleString()}*\n\n` +
+            `⏳ Próximo daily en: *24 horas*`
         );
     } catch (error: any) {
         console.error('[DAILY ERROR]:', error);
-        return msg.reply('⚠︎ Ocurrió un error al reclamar tu daily.');
+        return msg.reply('⚠️ Ocurrió un error al reclamar tu daily.');
     }
 }
