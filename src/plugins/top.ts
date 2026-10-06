@@ -1,4 +1,4 @@
-import { getTopActive } from '../lib/database.ts';
+/*import { getTopActive } from '../lib/database.ts';
 
 export const command = ['top'];
 export const category = 'info';
@@ -60,3 +60,4 @@ export default async function (sock: any, msg: any, extra: any) {
         return msg.reply('⚠︎ 𝙾𝚌𝚞𝚛𝚛𝚒ó 𝚞𝚗 𝚎𝚛𝚛𝚘𝚛.');
     }
 }
+*/
