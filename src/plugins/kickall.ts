@@ -4,85 +4,102 @@ export const description = 'Expulsa a todos del grupo excepto al owner.';
 export const admin = true;
 export const botAdmin = true;
 
+const normalize = (jid: string) => String(jid || '').split('@')[0].split(':')[0];
+
 export default async function (sock: any, msg: any, extra: any) {
     if (!msg.isGroup) {
         return msg.reply('🍓 𝙴𝚂𝚃𝙴 𝙲𝙾𝙼𝙰𝙽𝙳𝙾 𝚂𝙾𝙻𝙾 𝙵𝚄𝙽𝙲𝙸𝙾𝙽𝙰 𝙴𝙽 𝙶𝚁𝚄𝙿𝙾𝚂.');
     }
 
     const chatId = msg.from || msg.chat || extra?.chat;
+    const react = (text: string) =>
+        sock.sendMessage(chatId, { react: { text, key: msg.key } }).catch(() => {});
 
     try {
-        msg.react('⏳');
+        await react('⏳');
 
         const metadata = await sock.groupMetadata(chatId);
         const participants = metadata?.participants || [];
-        const groupOwner = metadata?.owner;
 
-        if (!groupOwner) {
-            msg.react('❌');
-            return msg.reply('⚠︎ 𝙽𝙾 𝚂𝙴 𝙿𝚄𝙳𝙾 𝙰𝚄𝚒𝚃𝚎𝚗𝚝𝚒𝚏𝚒𝚌𝚊𝚛 𝚊𝚕 𝚙𝚞𝚎𝚢𝚍𝚞𝚛𝚎𝚘𝚍𝚎𝚕𝚘𝚞𝚎𝚣𝚞𝚎𝚕𝚘.');
-        }
+        const protectedIds = new Set<string>();
+        const add = (jid?: string) => {
+            if (jid) protectedIds.add(normalize(jid));
+        };
 
-        const toRemove: string[] = [];
-        const botJid = sock.user?.id || '';
+        add(metadata?.owner);
+        add((metadata as any)?.ownerPn);
+        add(sock.user?.id);
+        add((sock.user as any)?.lid);
+        add(msg.sender);
 
-        for (const participant of participants) {
-            const isOwner = participant.id === groupOwner;
-            const isBot = participant.id === botJid;
-            const isSender = participant.id === msg.sender;
-
-            if (!isOwner && !isBot && !isSender) {
-                toRemove.push(participant.id);
+        for (const p of participants) {
+            if (p.admin === 'superadmin') {
+                add(p.id);
+                add(p.lid);
+                add(p.phoneNumber);
             }
         }
 
+        const toRemove: string[] = participants
+            .filter((p: any) => {
+                const ids = [p.id, p.lid, p.phoneNumber].filter(Boolean).map(normalize);
+                return !ids.some((id: string) => protectedIds.has(id));
+            })
+            .map((p: any) => p.id);
+
         if (toRemove.length === 0) {
-            msg.react('ℹ️');
-            return msg.reply('✧ 𝙽𝙰 𝙷𝙰𝚢 𝙿𝙴𝚁𝙱𝚂𝙰𝚂𝙿𝙰𝚁𝙰 𝙰𝚂𝙰𝙻𝚊𝚛.');
+            await react('ℹ️');
+            return msg.reply('🍥 𝙽𝙾 𝙷𝙰𝚈 𝙼𝙸𝙴𝙼𝙱𝚁𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚇𝙿𝚄𝙻𝚂𝙰𝚁.');
         }
 
         await sock.sendMessage(
             chatId,
             {
-                text: `✧ 𝚃𝙾 𝙰𝙺𝙰́𝙽𝙿𝙿𝙿𝚊𝚛 𝙰 ${toRemove.length} 𝚌𝚘𝚠𝚊𝚢𝚘𝚜...\n\n` +
-                    `⏳ 𝙿𝚘𝚘𝙿𝚞𝚃𝚃𝙴𝙼𝙾𝚂 𝙿𝚕𝙿𝙰́𝙼𝙿𝚘𝚞𝚊𝚜...`
+                text:
+                    `🍓͜ᩧ𑂳ᰍ  𝙺𝙸𝙲𝙺𝙰𝙻𝙻\n\n` +
+                    `🪷 𝙴𝚇𝙿𝚄𝙻𝚂𝙰𝙽𝙳𝙾 𝙰 ${toRemove.length} 𝙼𝙸𝙴𝙼𝙱𝚁𝙾𝚂...`
             },
             { quoted: msg }
         );
 
-        const batchSize = 50;
+        let removed = 0;
+        const batchSize = 20;
+
         for (let i = 0; i < toRemove.length; i += batchSize) {
             const batch = toRemove.slice(i, i + batchSize);
             try {
                 await sock.groupParticipantsUpdate(chatId, batch, 'remove');
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                removed += batch.length;
             } catch (error: any) {
-                console.error('[KICKALL BATCH ERROR]:', error);
+                console.error('[KICKALL BATCH ERROR]:', error?.message || error);
             }
+            await new Promise(resolve => setTimeout(resolve, 1500));
         }
 
-        msg.react('✅');
+        await react('✅');
 
         return sock.sendMessage(
             chatId,
             {
-                text: `✅ 𝙻𝚒𝚖𝚙𝚒𝚎𝚣𝚊 𝚌𝚘𝚖𝚙𝚕𝚎𝚝𝚊𝚍𝚊\n\n` +
-                    `🗑️ 𝚂𝙴 𝙰𝙲𝙿𝙷𝚄𝙻𝚂𝖔𝚗 ${toRemove.length} 𝚖𝚒𝚎𝚖𝚋𝚛𝚘𝚜\n` +
-                    `👥 𝚂𝙾𝙻𝙾 𝚀𝚞𝙴𝚍𝚊: 𝙾𝚠𝙽𝙴𝚁 𝚢 𝙰𝚍𝚖𝚒𝚗𝚎𝚜\n\n` +
-                    `ꨄ︎ ${global.nmcreador}`
+                text:
+                    `✅ 𝙻𝙸𝙼𝙿𝙸𝙴𝚉𝙰 𝙲𝙾𝙼𝙿𝙻𝙴𝚃𝙰𝙳𝙰\n\n` +
+                    `🪷 𝙴𝚇𝙿𝚄𝙻𝚂𝙰𝙳𝙾𝚂 ── ${removed}/${toRemove.length}\n` +
+                    `🍥 𝚀𝚄𝙴𝙳𝙰𝙽 ── 𝙾𝚆𝙽𝙴𝚁, 𝙱𝙾𝚃 𝚈 𝚀𝚄𝙸𝙴𝙽 𝙴𝙹𝙴𝙲𝚄𝚃Ó`
             },
             { quoted: msg }
         );
     } catch (error: any) {
         console.error('[KICKALL ERROR]:', error);
-        msg.react('❌');
+        await react('❌');
 
-        if (error?.output?.statusCode === 401 || error?.output?.statusCode === 500 || error?.data === 401) {
+        const status = error?.output?.statusCode || error?.data || error?.status;
+        if (status === 401 || status === 403 || status === 500) {
             return msg.reply(
-                '✧ 𝙴𝙻 𝙱𝚘𝚝 𝚗𝚎𝚌𝚎𝚜𝚒𝚝𝚊 𝚜𝚎𝚛 𝙰𝚍𝚖𝚒𝚗𝚒𝚜𝚝𝚛𝚊𝚍𝚘𝚛 𝙿𝙰𝙾𝚊 𝚀𝚞𝙰𝚒𝚡𝚊𝚛 𝚖𝚒𝚎𝚖𝚋𝚛𝚘𝚜.'
+                `⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙴𝙹𝙴𝙲𝚄𝚃𝙰𝚁 𝙻𝙰 𝙰𝙲𝙲𝙸Ó𝙽.\n\n` +
+                `🍥 𝚅𝙴𝚁𝙸𝙵𝙸𝙲𝙰 𝚀𝚄𝙴 𝙴𝙻 𝙱𝙾𝚃 𝚂𝙴𝙰 𝙰𝙳𝙼𝙸𝙽.`
             );
         }
 
-        return msg.reply('⚠︎ 𝙾𝚌𝚞𝚛𝚛𝚒ó 𝚞𝚗 𝚎𝚛𝚛𝚘𝚛 𝚊𝚕 𝚕𝚒𝚖𝚙𝚒𝚊𝚛 𝚎𝚕 𝚐𝚛𝚞𝚙𝚘.');
+        return msg.reply('⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙻𝙸𝙼𝙿𝙸𝙰𝚁 𝙴𝙻 𝙶𝚁𝚄𝙿𝙾.');
     }
 }

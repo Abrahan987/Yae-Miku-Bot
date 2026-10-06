@@ -1,10 +1,10 @@
-import { removeWarning } from '../lib/database.ts';
+import { getWarnings } from '../lib/database.ts';
 
-export const command = ['unwarn', 'quitarwarn', 'desadvertir'];
+export const command = ['checkwarn', 'warns', 'advertencias'];
 export const category = 'admin';
-export const description = 'Quita una advertencia a un usuario del grupo.';
+export const description = 'Consulta cuántas advertencias tiene un usuario.';
 export const admin = true;
-export const botAdmin = true;
+export const botAdmin = false;
 
 export default async function (sock: any, msg: any, extra: any) {
     if (!msg.isGroup) {
@@ -24,7 +24,7 @@ export default async function (sock: any, msg: any, extra: any) {
         if (!targetJid) {
             return msg.reply(
                 `🍓 𝚄𝚂𝙾\n\n` +
-                `> ${global.prefix[0]}unwarn @usuario\n` +
+                `> ${global.prefix[0]}checkwarn @usuario\n` +
                 `> Responde a su mensaje`
             );
         }
@@ -37,34 +37,21 @@ export default async function (sock: any, msg: any, extra: any) {
             return msg.reply('⚠︎ 𝙴𝙻 𝚄𝚂𝚄𝙰𝚁𝙸𝙾 𝙽𝙾 𝙴𝚂𝚃𝙰́ 𝙴𝙽 𝙴𝙻 𝙶𝚁𝚄𝙿𝙾.');
         }
 
-        const remaining = removeWarning(chatId, targetJid);
-
-        if (remaining <= 0) {
-            return sock.sendMessage(
-                chatId,
-                {
-                    text:
-                        `✅ 𝚁𝙴𝚂𝙴𝚃 𝙳𝙴 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂\n\n` +
-                        `🪷 @${targetJid.split('@')[0]} 𝚢𝙰 𝙽𝙾 𝚃𝙸𝙴𝙽𝙴 𝙼𝙰𝚂 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂.`,
-                    mentions: [targetJid]
-                },
-                { quoted: msg }
-            );
-        }
+        const warnings = getWarnings(chatId, targetJid);
 
         return sock.sendMessage(
             chatId,
             {
                 text:
-                    `✅ 𝚂𝙴 𝚀𝚄𝙸𝚃𝙾 𝟏 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰\n\n` +
+                    `⚠️ 𝙴𝚂𝚃𝙰𝙳𝙾 𝙳𝙴 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂\n\n` +
                     `🪷 @${targetJid.split('@')[0]}\n` +
-                    `📌 𝚁𝙴𝚂𝚃𝙰𝙽 ${remaining}/3`,
+                    `📌 𝚃𝚒𝚎𝚗𝚎 ${warnings}/3 𝚊𝚍𝚟𝚎𝚛𝚝𝚎𝚗𝚌𝚒𝚊𝚜.`,
                 mentions: [targetJid]
             },
             { quoted: msg }
         );
     } catch (error: any) {
-        console.error('[UNWARN ERROR]:', error);
-        return msg.reply('⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝚀𝚄𝙸𝚃𝙰𝚁 𝙻𝙰 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰.');
+        console.error('[CHECKWARN ERROR]:', error);
+        return msg.reply('⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙲𝙾𝙽𝚂𝚄𝙻𝚃𝙰𝚁 𝙻𝙰𝚂 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂.');
     }
 }
