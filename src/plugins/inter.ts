@@ -39,66 +39,76 @@ const captions: Record<string, (from: string, to: string) => string> = {
   kill: (from, to) => from === to ? 'se autoeliminó en modo dramático.' : `asesinó a`,
 };
 
+const descriptions: Record<string, string> = {
+  kiss: 'Dale un beso a alguien.',
+  hug: 'Abraza a alguien.',
+  pat: 'Acaricia la cabeza de alguien.',
+  slap: 'Dale una bofetada a alguien.',
+  cuddle: 'Acurrúcate con alguien.',
+  tickle: 'Hazle cosquillas a alguien.',
+  punch: 'Dale un puñetazo a alguien.',
+  bite: 'Muerde a alguien.',
+  dance: 'Baila con alguien.',
+  angry: 'Muestra tu enojo.',
+  bored: 'Muestra tu aburrimiento.',
+  cry: 'Llora por alguien.',
+  happy: 'Muestra tu felicidad.',
+  sad: 'Muestra tu tristeza.',
+  scared: 'Muestra tu miedo.',
+  smile: 'Sonríele a alguien.',
+  wink: 'Guíñale un ojo a alguien.',
+  blush: 'Sonrójate.',
+  laugh: 'Ríete de alguien.',
+  think: 'Piensa en alguien.',
+  walk: 'Pasea con alguien.',
+  run: 'Corre con alguien.',
+  eat: 'Come con alguien.',
+  sleep: 'Duerme con alguien.',
+  pout: 'Haz pucheros.',
+  highfive: 'Choca los cinco con alguien.',
+  handhold: 'Toma la mano de alguien.',
+  wave: 'Saluda a alguien.',
+  clap: 'Aplaude a alguien.',
+  cringe: 'Siente cringe por alguien.',
+  bonk: 'Dale un bonk a alguien.',
+  lick: 'Lame a alguien.',
+  kill: 'Asesina a alguien (broma).',
+};
+
+// alias -> acción
 const commandAliases: Record<string, string> = {
   muak: 'kiss',
   beso: 'kiss',
-  cafe: 'coffee',
-  aburrido: 'bored',
-  drama: 'dramatic',
-  timido: 'shy',
-  correr: 'run',
-  triste: 'sad',
-  amor: 'love',
-  fumar: 'smoke',
-  escupir: 'spit',
-  pisar: 'step',
-  comer: 'eat',
-  nom: 'eat',
-  feliz: 'happy',
-  morder: 'bite',
-  bailar: 'dance',
-  caricia: 'pat',
   abrazo: 'hug',
+  caricia: 'pat',
   acurruca: 'cuddle',
   cosquillas: 'tickle',
   puñetazo: 'punch',
+  morder: 'bite',
+  bailar: 'dance',
+  aburrido: 'bored',
+  feliz: 'happy',
+  triste: 'sad',
+  correr: 'run',
+  comer: 'eat',
+  nom: 'eat',
 };
 
 export const command = [
-  'kiss', 'muak', 'beso',
-  'hug', 'abrazo',
-  'pat', 'caricia',
-  'slap',
-  'cuddle', 'acurruca',
-  'tickle', 'cosquillas',
-  'punch', 'puñetazo',
-  'bite', 'morder',
-  'dance', 'bailar',
-  'angry',
-  'bored', 'aburrido',
-  'cry',
-  'happy', 'feliz',
-  'sad', 'triste',
-  'scared',
-  'smile',
-  'wink',
-  'blush',
-  'laugh',
-  'think',
-  'walk',
-  'run', 'correr',
-  'eat', 'comer', 'nom',
-  'sleep',
-  'pout',
-  'highfive',
-  'handhold',
-  'wave',
-  'clap',
-  'cringe',
-  'bonk',
-  'lick',
-  'kill',
+  ...Object.keys(captions),
+  ...Object.keys(commandAliases),
 ];
+
+// Cada acción aparece por separado en el menú
+export const menu = Object.keys(captions).map((action) => ({
+  command: [
+    action,
+    ...Object.entries(commandAliases)
+      .filter(([, target]) => target === action)
+      .map(([alias]) => alias),
+  ],
+  description: descriptions[action] || 'Realiza una acción anime.',
+}));
 
 export const category = 'diversión';
 export const description = 'Realiza una acción/interacción anime.';
@@ -110,12 +120,10 @@ function getNombre(jid: string): string {
 }
 
 export default async function (sock: any, msg: any, extra: any) {
-  const command_used = extra.command?.toLowerCase();
+  const command_used = String(extra.command || '').toLowerCase();
   const currentCommand = commandAliases[command_used] || command_used;
 
-  if (!captions[currentCommand]) {
-    return msg.reply(`❌ Acción no reconocida: *${command_used}*`);
-  }
+  if (!captions[currentCommand]) return;
 
   const sender = msg.sender;
   const senderName = msg.pushName || getNombre(sender);
@@ -128,37 +136,34 @@ export default async function (sock: any, msg: any, extra: any) {
       targetJid = msg.quoted.sender;
     }
 
-    const targetName = targetJid ? (msg.pushName || getNombre(targetJid)) : senderName;
+    const targetName = targetJid ? getNombre(targetJid) : senderName;
     const descripcion = captions[currentCommand](senderName, targetName);
 
     const url = `${BASE_URL}?inter=${currentCommand}&key=${API_KEY}`;
     const response = await axios.get(url, { timeout: 10000 });
 
-    if (!response.data || !response.data.url) {
+    const gifUrl =
+      response.data?.url || response.data?.result?.url || response.data?.result;
+
+    if (!gifUrl || typeof gifUrl !== 'string') {
       return msg.reply(`⚠️ No pude obtener la imagen de ${currentCommand}. Intenta de nuevo.`);
     }
 
-    const gifUrl = response.data.url;
-    const mentions_list = targetJid ? [targetJid] : [];
-
     const caption = targetJid
-      ? `🌸 *${senderName}* ${descripcion} *${targetName}*`
+      ? `🌸 *${senderName}* ${descripcion} *@${targetName}*`
       : `🌸 *${senderName}* ${descripcion}`;
+
+    const isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(gifUrl);
 
     return await sock.sendMessage(
       msg.chat,
-      {
-        image: { url: gifUrl },
-        caption,
-        mentions: mentions_list
-      },
+      isVideo
+        ? { video: { url: gifUrl }, gifPlayback: true, caption, mentions: targetJid ? [targetJid] : [] }
+        : { image: { url: gifUrl }, caption, mentions: targetJid ? [targetJid] : [] },
       { quoted: msg }
     );
   } catch (error: any) {
     console.error('[INTER ERROR]:', error.message);
-    return msg.reply(
-      `⚠️ Error al traer la acción.\n\n` +
-      `🌸 Intenta de nuevo en unos momentos.`
-    );
+    return msg.reply('⚠️ Error al traer la acción. Intenta de nuevo en unos momentos.');
   }
 }
