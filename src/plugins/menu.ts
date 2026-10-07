@@ -1,100 +1,100 @@
-
 export const command = ['menu', 'help', 'comandos'];
 export const category = 'info';
 export const description = 'Muestra el menú principal con todos los comandos.';
 
 export default async function (sock, msg, extra) {
-const pluginData = extra.pluginData;
+    const pluginData = extra.pluginData;
 
-const categoryConfig = [  
-    {  
-        key: 'info',  
-        title: 'INFO',  
-        emoji: '🪷',  
-        aliases: ['info', 'informacion', 'main', 'principal']  
-    },  
-    {  
-        key: 'descargas',  
-        title: 'DESCARGAS',  
-        emoji: '🍥',  
-        aliases: ['descargas', 'descarga', 'download', 'downloads']  
-    },  
-    {  
-        key: 'grupos',  
-        title: 'GRUPOS',  
-        emoji: '🍓',  
-        aliases: ['grupos', 'grupo', 'group', 'groups']  
-    },  
-    {  
-        key: 'herramientas',  
-        title: 'HERRAMIENTAS',  
-        emoji: '🧰',  
-        aliases: ['herramientas', 'tools', 'utilidades']  
-    }  
-];  
+    const categoryConfig = [
+        {
+            key: 'info',
+            title: 'INFO',
+            emoji: '🪷',
+            aliases: ['info', 'informacion', 'main', 'principal']
+        },
+        {
+            key: 'descargas',
+            title: 'DESCARGAS',
+            emoji: '🍥',
+            aliases: ['descargas', 'descarga', 'download', 'downloads']
+        },
+        {
+            key: 'grupos',
+            title: 'GRUPOS',
+            emoji: '🍓',
+            aliases: ['grupos', 'grupo', 'group', 'groups']
+        },
+        {
+            key: 'herramientas',
+            title: 'HERRAMIENTAS',
+            emoji: '🧰',
+            aliases: ['herramientas', 'tools', 'utilidades']
+        }
+    ];
 
-const groupedCategories = new Map();  
+    const groupedCategories = new Map();
 
-for (const [, data] of pluginData.entries()) {  
-    const rawCat = (data.category || 'misc').toLowerCase().trim();  
+    for (const [, data] of pluginData.entries()) {
+        const rawCat = (data.category || 'misc').toLowerCase().trim();
 
-    const matchedConfig = categoryConfig.find(c => c.aliases.includes(rawCat));  
-    const finalKey = matchedConfig ? matchedConfig.key : rawCat;  
+        const matchedConfig = categoryConfig.find(c => c.aliases.includes(rawCat));
+        const finalKey = matchedConfig ? matchedConfig.key : rawCat;
 
-    if (!groupedCategories.has(finalKey)) {  
-        groupedCategories.set(finalKey, []);  
-    }  
+        if (!groupedCategories.has(finalKey)) {
+            groupedCategories.set(finalKey, []);
+        }
 
-    const catList = groupedCategories.get(finalKey);  
+        const catList = groupedCategories.get(finalKey);
 
-    const existing = catList.find(item =>  
-        item.commands.some(c => data.commands.includes(c))  
-    );  
+        const existing = catList.find(item =>
+            item.commands.some(c => data.commands.includes(c))
+        );
 
-    if (!existing) {  
-        catList.push({  
-            commands: data.commands,  
-            description: data.description || 'Sin descripción'  
-        });  
-    }  
-}  
+        if (!existing) {
+            catList.push({
+                commands: data.commands,
+                description: data.description || 'Sin descripción'
+            });
+        }
+    }
 
-const renderCategoryBlock = (title, emoji, items) => {  
-    const lines = [];  
+    const renderCategoryBlock = (title, emoji, items) => {
+        const lines = [];
 
-    for (const item of items) {  
-        const limitedCmds = item.commands.slice(0, 2);  
-        const cmdsFormatted = limitedCmds.map(c => `.${c}`).join(' • ');  
+        for (const item of items) {
+            const limitedCmds = item.commands.slice(0, 2);
+            const cmdsFormatted = limitedCmds.map(c => `.${c}`).join(' • ');
 
-        lines.push(`> *${cmdsFormatted}*`);  
-        lines.push(`> ${item.description}`);  
-    }  
+            lines.push(`> *${cmdsFormatted}*`);
+            lines.push(`> ${item.description}`);
+        }
 
-    return `${emoji}͜ᩧ𑂳ᰍ  *${title.toUpperCase()}*\n${lines.join('\n')}`;  
-};  
+        return `${emoji}͜ᩧ𑂳ᰍ  *${title.toUpperCase()}*\n${lines.join('\n')}`;
+    };
 
-const blocks = [];  
-const processedKeys = new Set();  
+    const blocks = [];
+    const processedKeys = new Set();
 
-for (const conf of categoryConfig) {  
-    const items = groupedCategories.get(conf.key);  
-    if (items && items.length > 0) {  
-        blocks.push(renderCategoryBlock(conf.title, conf.emoji, items));  
-        processedKeys.add(conf.key);  
-    }  
-}  
+    for (const conf of categoryConfig) {
+        const items = groupedCategories.get(conf.key);
 
-for (const [catKey, items] of groupedCategories.entries()) {  
-    if (!processedKeys.has(catKey) && items.length > 0) {  
-        const dynamicTitle = catKey.toUpperCase();  
-        blocks.push(renderCategoryBlock(dynamicTitle, '🌸', items));  
-    }  
-}  
+        if (items && items.length > 0) {
+            blocks.push(renderCategoryBlock(conf.title, conf.emoji, items));
+            processedKeys.add(conf.key);
+        }
+    }
 
-const categoriesContent = blocks.join('\n\n');  
-const botName = global.namebot || 'YAE MIKU BOT';  
+    for (const [catKey, items] of groupedCategories.entries()) {
+        if (!processedKeys.has(catKey) && items.length > 0) {
+            const dynamicTitle = catKey.toUpperCase();
+            blocks.push(renderCategoryBlock(dynamicTitle, '🌸', items));
+        }
+    }
 
-const menuText = `ᅟㅤ 𓈒   ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
+    const categoriesContent = blocks.join('\n\n');
+    const botName = global.namebot || 'YAE MIKU BOT';
+
+    const menuText = `ᅟㅤ 𓈒   ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
 
   ${botName.toUpperCase()}˙ᰨᰍ
 𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
@@ -108,17 +108,20 @@ ${categoriesContent}
 
 ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
 
-if (global.icono) {  
-    await sock.sendMessage(  
-        msg.from,  
-        {  
-            image: { url: global.icono },  
-            caption: menuText  
-        },  
-        { quoted: msg }  
-    );  
-} else {  
-    await msg.reply(menuText);  
-}
-
+    if (global.icono) {
+        await sock.sendMessage(
+            global.rcanal,
+            {
+                image: { url: global.icono },
+                caption: menuText
+            }
+        );
+    } else {
+        await sock.sendMessage(
+            global.rcanal,
+            {
+                text: menuText
+            }
+        );
+    }
 }
