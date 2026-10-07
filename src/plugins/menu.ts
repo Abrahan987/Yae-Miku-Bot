@@ -6,32 +6,27 @@ export default async function (sock: any, msg: any, extra: any) {
     console.log('\n🍓͜ᩧ𑂳ᰍ  INICIANDO COMANDO MENU');
 
     try {
-        if (!sock) {
-            console.error('🍥 ERROR: sock no está definido.');
-            return;
-        }
-
-        if (!extra) {
-            console.error('🍥 ERROR: extra no está definido.');
-            return;
-        }
-
         const pluginData = extra.pluginData;
 
         if (!pluginData) {
             console.error('🍥 ERROR: extra.pluginData no está definido.');
-            console.error('🪷 extra recibido:', extra);
             return;
         }
-
-        console.log('🪷 pluginData recibido correctamente.');
 
         if (!global.rcanal) {
             console.error('🍥 ERROR: global.rcanal no está definido.');
             return;
         }
 
-        console.log('🍓 Canal configurado:', global.rcanal);
+        const remoteJid = msg?.key?.remoteJid;
+
+        if (!remoteJid) {
+            console.error('🍥 ERROR: no se pudo obtener msg.key.remoteJid.');
+            return;
+        }
+
+        console.log('🍓 Chat destino:', remoteJid);
+        console.log('🪷 Canal referencia:', global.rcanal);
 
         const categoryConfig = [
             {
@@ -61,8 +56,6 @@ export default async function (sock: any, msg: any, extra: any) {
         ];
 
         const groupedCategories = new Map();
-
-        console.log('🪷 Procesando plugins...');
 
         for (const [, data] of pluginData.entries()) {
             const rawCat = (data.category || 'misc')
@@ -96,15 +89,6 @@ export default async function (sock: any, msg: any, extra: any) {
                 });
             }
         }
-
-        console.log(
-            `🍓 Plugins procesados: ${pluginData.size}`
-        );
-
-        console.log(
-            '🍓 Categorías encontradas:',
-            [...groupedCategories.keys()]
-        );
 
         const renderCategoryBlock = (
             title: string,
@@ -158,12 +142,7 @@ export default async function (sock: any, msg: any, extra: any) {
             }
         }
 
-        console.log(
-            `🪷 Bloques de categorías generados: ${blocks.length}`
-        );
-
         const categoriesContent = blocks.join('\n\n');
-
         const botName = global.namebot || 'YAE MIKU BOT';
 
         const menuText = `ᅟㅤ 𓈒   ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
@@ -180,53 +159,52 @@ ${categoriesContent}
 
 ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
 
-        console.log(
-            `🍓 Menú generado correctamente (${menuText.length} caracteres).`
+        const contextInfo = {
+            forwardingScore: 1,
+            isForwarded: true,
+            forwardedNewsletterMessageInfo: {
+                newsletterJid: global.rcanal
+            }
+        };
+
+        console.log('🪷 Preparando mensaje...');
+        console.log('🍓 contextInfo:', contextInfo);
+
+        const messageContent = global.icono
+            ? {
+                image: {
+                    url: global.icono
+                },
+                caption: menuText,
+                contextInfo
+            }
+            : {
+                text: menuText,
+                contextInfo
+            };
+
+        console.log('🍥 Enviando menú al chat actual...');
+
+        const result = await sock.sendMessage(
+            remoteJid,
+            messageContent
         );
 
-        if (global.icono) {
-            console.log('🪷 Enviando menú con imagen...');
-            console.log('🍓 Imagen:', global.icono);
-
-            const result = await sock.sendMessage(
-                global.rcanal,
-                {
-                    image: {
-                        url: global.icono
-                    },
-                    caption: menuText
-                }
-            );
-
-            console.log('🍓 MENÚ ENVIADO CORRECTAMENTE.');
-            console.log('🪷 Resultado:', result);
-
-        } else {
-            console.log('🪷 global.icono no definido.');
-            console.log('🍥 Enviando menú como texto...');
-
-            const result = await sock.sendMessage(
-                global.rcanal,
-                {
-                    text: menuText
-                }
-            );
-
-            console.log('🍓 MENÚ ENVIADO CORRECTAMENTE.');
-            console.log('🪷 Resultado:', result);
-        }
+        console.log('🍓 MENÚ ENVIADO CORRECTAMENTE.');
+        console.log('🪷 ID:', result?.key?.id);
+        console.log('🍥 Destino:', result?.key?.remoteJid);
 
     } catch (error) {
         console.error('\n🍥͜ᩧ𑂳ᰍ  ERROR EN COMANDO MENU');
         console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.error(error);
 
         if (error instanceof Error) {
             console.error('🍓 Mensaje:', error.message);
             console.error('🪷 Stack:', error.stack);
+        } else {
+            console.error(error);
         }
 
         console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     }
 }
-
