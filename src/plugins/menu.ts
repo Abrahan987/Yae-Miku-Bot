@@ -94,9 +94,9 @@ for (const [catKey, items] of groupedCategories.entries()) {
 const categoriesContent = blocks.join('\n\n');  
 const botName = global.namebot || 'YAE MIKU BOT';  
 
-const menuText = `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
+const menuText = `ᅟㅤ 𓈒   ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
 
-𖫨𖫨🪷⃨᪲  ${botName.toUpperCase()}˙ᰨᰍ
+  ${botName.toUpperCase()}˙ᰨᰍ
 𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
 
 🍓͜ᩧ𑂳ᰍ  𝗛𝗼𝗹𝗮, 𝗯𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼 𝗮𝗹
