@@ -3,127 +3,170 @@ export const category = 'info';
 export const description = 'Muestra el menú principal con todos los comandos.';
 
 export default async function (sock: any, msg: any, extra: any) {
-    const pluginData = extra.pluginData;
+    console.log('\n🍓͜ᩧ𑂳ᰍ  INICIANDO COMANDO MENU');
 
-    const categoryConfig = [
-        {
-            key: 'info',
-            title: 'INFO',
-            emoji: '🪷',
-            aliases: ['info', 'informacion', 'main', 'principal']
-        },
-        {
-            key: 'descargas',
-            title: 'DESCARGAS',
-            emoji: '🍥',
-            aliases: ['descargas', 'descarga', 'download', 'downloads']
-        },
-        {
-            key: 'grupos',
-            title: 'GRUPOS',
-            emoji: '🍓',
-            aliases: ['grupos', 'grupo', 'group', 'groups']
-        },
-        {
-            key: 'herramientas',
-            title: 'HERRAMIENTAS',
-            emoji: '🧰',
-            aliases: ['herramientas', 'tools', 'utilidades']
-        }
-    ];
-
-    const groupedCategories = new Map();
-
-    for (const [, data] of pluginData.entries()) {
-        const rawCat = (data.category || 'misc')
-            .toLowerCase()
-            .trim();
-
-        const matchedConfig = categoryConfig.find(c =>
-            c.aliases.includes(rawCat)
-        );
-
-        const finalKey = matchedConfig
-            ? matchedConfig.key
-            : rawCat;
-
-        if (!groupedCategories.has(finalKey)) {
-            groupedCategories.set(finalKey, []);
+    try {
+        if (!sock) {
+            console.error('🍥 ERROR: sock no está definido.');
+            return;
         }
 
-        const catList = groupedCategories.get(finalKey);
-
-        const existing = catList.find(item =>
-            item.commands.some(c =>
-                data.commands.includes(c)
-            )
-        );
-
-        if (!existing) {
-            catList.push({
-                commands: data.commands,
-                description: data.description || 'Sin descripción'
-            });
-        }
-    }
-
-    const renderCategoryBlock = (
-        title: string,
-        emoji: string,
-        items: any[]
-    ) => {
-        const lines: string[] = [];
-
-        for (const item of items) {
-            const limitedCmds = item.commands.slice(0, 2);
-
-            const cmdsFormatted = limitedCmds
-                .map(c => `.${c}`)
-                .join(' • ');
-
-            lines.push(`> *${cmdsFormatted}*`);
-            lines.push(`> ${item.description}`);
+        if (!extra) {
+            console.error('🍥 ERROR: extra no está definido.');
+            return;
         }
 
-        return `${emoji}͜ᩧ𑂳ᰍ  *${title.toUpperCase()}*\n${lines.join('\n')}`;
-    };
+        const pluginData = extra.pluginData;
 
-    const blocks: string[] = [];
-    const processedKeys = new Set();
+        if (!pluginData) {
+            console.error('🍥 ERROR: extra.pluginData no está definido.');
+            console.error('🪷 extra recibido:', extra);
+            return;
+        }
 
-    for (const conf of categoryConfig) {
-        const items = groupedCategories.get(conf.key);
+        console.log('🪷 pluginData recibido correctamente.');
 
-        if (items && items.length > 0) {
-            blocks.push(
-                renderCategoryBlock(
-                    conf.title,
-                    conf.emoji,
-                    items
+        if (!global.rcanal) {
+            console.error('🍥 ERROR: global.rcanal no está definido.');
+            return;
+        }
+
+        console.log('🍓 Canal configurado:', global.rcanal);
+
+        const categoryConfig = [
+            {
+                key: 'info',
+                title: 'INFO',
+                emoji: '🪷',
+                aliases: ['info', 'informacion', 'main', 'principal']
+            },
+            {
+                key: 'descargas',
+                title: 'DESCARGAS',
+                emoji: '🍥',
+                aliases: ['descargas', 'descarga', 'download', 'downloads']
+            },
+            {
+                key: 'grupos',
+                title: 'GRUPOS',
+                emoji: '🍓',
+                aliases: ['grupos', 'grupo', 'group', 'groups']
+            },
+            {
+                key: 'herramientas',
+                title: 'HERRAMIENTAS',
+                emoji: '🧰',
+                aliases: ['herramientas', 'tools', 'utilidades']
+            }
+        ];
+
+        const groupedCategories = new Map();
+
+        console.log('🪷 Procesando plugins...');
+
+        for (const [, data] of pluginData.entries()) {
+            const rawCat = (data.category || 'misc')
+                .toLowerCase()
+                .trim();
+
+            const matchedConfig = categoryConfig.find(c =>
+                c.aliases.includes(rawCat)
+            );
+
+            const finalKey = matchedConfig
+                ? matchedConfig.key
+                : rawCat;
+
+            if (!groupedCategories.has(finalKey)) {
+                groupedCategories.set(finalKey, []);
+            }
+
+            const catList = groupedCategories.get(finalKey);
+
+            const existing = catList.find(item =>
+                item.commands.some(c =>
+                    data.commands.includes(c)
                 )
             );
 
-            processedKeys.add(conf.key);
+            if (!existing) {
+                catList.push({
+                    commands: data.commands,
+                    description: data.description || 'Sin descripción'
+                });
+            }
         }
-    }
 
-    for (const [catKey, items] of groupedCategories.entries()) {
-        if (!processedKeys.has(catKey) && items.length > 0) {
-            blocks.push(
-                renderCategoryBlock(
-                    catKey.toUpperCase(),
-                    '🌸',
-                    items
-                )
-            );
+        console.log(
+            `🍓 Plugins procesados: ${pluginData.size}`
+        );
+
+        console.log(
+            '🍓 Categorías encontradas:',
+            [...groupedCategories.keys()]
+        );
+
+        const renderCategoryBlock = (
+            title: string,
+            emoji: string,
+            items: any[]
+        ) => {
+            const lines: string[] = [];
+
+            for (const item of items) {
+                const limitedCmds = item.commands.slice(0, 2);
+
+                const cmdsFormatted = limitedCmds
+                    .map(c => `.${c}`)
+                    .join(' • ');
+
+                lines.push(`> *${cmdsFormatted}*`);
+                lines.push(`> ${item.description}`);
+            }
+
+            return `${emoji}͜ᩧ𑂳ᰍ  *${title.toUpperCase()}*\n${lines.join('\n')}`;
+        };
+
+        const blocks: string[] = [];
+        const processedKeys = new Set();
+
+        for (const conf of categoryConfig) {
+            const items = groupedCategories.get(conf.key);
+
+            if (items && items.length > 0) {
+                blocks.push(
+                    renderCategoryBlock(
+                        conf.title,
+                        conf.emoji,
+                        items
+                    )
+                );
+
+                processedKeys.add(conf.key);
+            }
         }
-    }
 
-    const categoriesContent = blocks.join('\n\n');
+        for (const [catKey, items] of groupedCategories.entries()) {
+            if (!processedKeys.has(catKey) && items.length > 0) {
+                blocks.push(
+                    renderCategoryBlock(
+                        catKey.toUpperCase(),
+                        '🌸',
+                        items
+                    )
+                );
+            }
+        }
 
-    const botName = global.namebot || 'YAE MIKU BOT';
+        console.log(
+            `🪷 Bloques de categorías generados: ${blocks.length}`
+        );
 
-    const menuText = `ᅟㅤ 𓈒   ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
+        const categoriesContent = blocks.join('\n\n');
+
+        const botName = global.namebot || 'YAE MIKU BOT';
+
+        const menuText = `ᅟㅤ 𓈒   ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
 
   ${botName.toUpperCase()}˙ᰨᰍ
 𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
@@ -137,26 +180,54 @@ ${categoriesContent}
 
 ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
 
-    if (!global.rcanal) {
-        throw new Error('global.rcanal no está definido.');
-    }
+        console.log(
+            `🍓 Menú generado correctamente (${menuText.length} caracteres).`
+        );
 
-    if (global.icono) {
-        await sock.sendMessage(
-            global.rcanal,
-            {
-                image: {
-                    url: global.icono
-                },
-                caption: menuText
-            }
-        );
-    } else {
-        await sock.sendMessage(
-            global.rcanal,
-            {
-                text: menuText
-            }
-        );
+        if (global.icono) {
+            console.log('🪷 Enviando menú con imagen...');
+            console.log('🍓 Imagen:', global.icono);
+
+            const result = await sock.sendMessage(
+                global.rcanal,
+                {
+                    image: {
+                        url: global.icono
+                    },
+                    caption: menuText
+                }
+            );
+
+            console.log('🍓 MENÚ ENVIADO CORRECTAMENTE.');
+            console.log('🪷 Resultado:', result);
+
+        } else {
+            console.log('🪷 global.icono no definido.');
+            console.log('🍥 Enviando menú como texto...');
+
+            const result = await sock.sendMessage(
+                global.rcanal,
+                {
+                    text: menuText
+                }
+            );
+
+            console.log('🍓 MENÚ ENVIADO CORRECTAMENTE.');
+            console.log('🪷 Resultado:', result);
+        }
+
+    } catch (error) {
+        console.error('\n🍥͜ᩧ𑂳ᰍ  ERROR EN COMANDO MENU');
+        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.error(error);
+
+        if (error instanceof Error) {
+            console.error('🍓 Mensaje:', error.message);
+            console.error('🪷 Stack:', error.stack);
+        }
+
+        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     }
 }
+
+lobal.rcanal", en la imagen, en "pluginData" o directamente en Baileys al intentar enviar al newsletter.
