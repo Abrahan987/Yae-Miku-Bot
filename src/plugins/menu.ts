@@ -35,13 +35,17 @@ export default async function (sock: any, msg: any, extra: any) {
     const groupedCategories = new Map();
 
     for (const [, data] of pluginData.entries()) {
-        const rawCat = (data.category || 'misc').toLowerCase().trim();
+        const rawCat = (data.category || 'misc')
+            .toLowerCase()
+            .trim();
 
         const matchedConfig = categoryConfig.find(c =>
             c.aliases.includes(rawCat)
         );
 
-        const finalKey = matchedConfig ? matchedConfig.key : rawCat;
+        const finalKey = matchedConfig
+            ? matchedConfig.key
+            : rawCat;
 
         if (!groupedCategories.has(finalKey)) {
             groupedCategories.set(finalKey, []);
@@ -50,7 +54,9 @@ export default async function (sock: any, msg: any, extra: any) {
         const catList = groupedCategories.get(finalKey);
 
         const existing = catList.find(item =>
-            item.commands.some(c => data.commands.includes(c))
+            item.commands.some(c =>
+                data.commands.includes(c)
+            )
         );
 
         if (!existing) {
@@ -66,10 +72,11 @@ export default async function (sock: any, msg: any, extra: any) {
         emoji: string,
         items: any[]
     ) => {
-        const lines = [];
+        const lines: string[] = [];
 
         for (const item of items) {
             const limitedCmds = item.commands.slice(0, 2);
+
             const cmdsFormatted = limitedCmds
                 .map(c => `.${c}`)
                 .join(' • ');
@@ -81,7 +88,7 @@ export default async function (sock: any, msg: any, extra: any) {
         return `${emoji}͜ᩧ𑂳ᰍ  *${title.toUpperCase()}*\n${lines.join('\n')}`;
     };
 
-    const blocks = [];
+    const blocks: string[] = [];
     const processedKeys = new Set();
 
     for (const conf of categoryConfig) {
@@ -102,11 +109,9 @@ export default async function (sock: any, msg: any, extra: any) {
 
     for (const [catKey, items] of groupedCategories.entries()) {
         if (!processedKeys.has(catKey) && items.length > 0) {
-            const dynamicTitle = catKey.toUpperCase();
-
             blocks.push(
                 renderCategoryBlock(
-                    dynamicTitle,
+                    catKey.toUpperCase(),
                     '🌸',
                     items
                 )
@@ -115,6 +120,7 @@ export default async function (sock: any, msg: any, extra: any) {
     }
 
     const categoriesContent = blocks.join('\n\n');
+
     const botName = global.namebot || 'YAE MIKU BOT';
 
     const menuText = `ᅟㅤ 𓈒   ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
@@ -131,29 +137,25 @@ ${categoriesContent}
 
 ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
 
-    const contextInfo = {
-        forwardingScore: 1,
-        isForwarded: true,
-        forwardedNewsletterMessageInfo: {
-            newsletterJid: global.rcanal
-        }
-    };
+    if (!global.rcanal) {
+        throw new Error('global.rcanal no está definido.');
+    }
 
     if (global.icono) {
         await sock.sendMessage(
             global.rcanal,
             {
-                image: { url: global.icono },
-                caption: menuText,
-                contextInfo
+                image: {
+                    url: global.icono
+                },
+                caption: menuText
             }
         );
     } else {
         await sock.sendMessage(
             global.rcanal,
             {
-                text: menuText,
-                contextInfo
+                text: menuText
             }
         );
     }
