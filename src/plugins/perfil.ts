@@ -1,6 +1,6 @@
 import { db, getUser, updateUser, getWarnings } from '../lib/database.ts';
 
-export const command = ['perfil', 'profile', 'p'];
+export const command = ['perfil', 'profile',];
 export const category = 'economia';
 export const description = 'Muestra tu perfil: nombre, foto y dinero.';
 export const admin = false;
