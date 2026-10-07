@@ -15,12 +15,17 @@ const cleanTitle = (title: string) => {
         .slice(0, 100);
 };
 
+const formatNumber = (value: any) => {
+    if (typeof value !== 'number') return 'N/A';
+    return value.toLocaleString('es-CO');
+};
+
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const text = extra.args.join(' ').trim();
 
     if (!text) {
         return msg.reply(
-            `🍓 𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝙴𝙻 𝙽𝙾𝙼𝙱𝙴 𝙾 𝚄𝚁𝙻 𝙳𝙴 𝙻𝙰 𝙲𝙰𝙽𝙲𝙸Ó𝙽\n\n` +
+            `🍓 𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝙴𝙻 𝙽𝙾𝙼𝙱𝚁𝙴 𝙾 𝚄𝚁𝙻 𝙳𝙴 𝙻𝙰 𝙲𝙰𝙽𝙲𝙸Ó𝙽\n\n` +
             `𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
             `> ${global.prefix[0]}play Oh Klahoma`
         );
@@ -42,7 +47,13 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
         const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(text);
 
-        if (!isYoutubeUrl) {
+        if (isYoutubeUrl) {
+            const result = await ytsearch({ videoId: text });
+
+            if (result) {
+                searchData = result;
+            }
+        } else {
             const result = await ytsearch(text);
 
             if (!result.videos?.length) {
@@ -71,9 +82,38 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
         const info = data.data;
 
-        const title = info.title || searchData?.title || 'YouTube Audio';
-        const author = info.author || searchData?.author?.name || 'Desconocido';
-        const imageUrl = info.image || searchData?.thumbnail;
+        const title =
+            searchData?.title ||
+            (info.title && info.title !== '-' ? info.title : null) ||
+            'YouTube Audio';
+
+        const author =
+            searchData?.author?.name ||
+            (info.author && info.author !== '-' ? info.author : null) ||
+            'Desconocido';
+
+        const channel =
+            searchData?.author?.name ||
+            (info.channel && info.channel !== '-' ? info.channel : null) ||
+            author;
+
+        const views =
+            searchData?.views ??
+            (info.views > 0 ? info.views : null);
+
+        const likes =
+            searchData?.likes ??
+            (info.likes > 0 ? info.likes : null);
+
+        const duration =
+            searchData?.timestamp ||
+            searchData?.duration ||
+            'N/A';
+
+        const imageUrl =
+            searchData?.thumbnail ||
+            searchData?.image ||
+            null;
 
         const infoText =
             `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
@@ -81,10 +121,11 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
             `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴\n\n` +
             `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
-            `🍥 𝙰𝚄𝚃𝙾𝚁 ── ${author}\n` +
-            `🪷 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${info.views || 'N/A'}\n` +
-            `🍥 𝙻𝙸𝙺𝙴𝚂 ── ${info.likes || 'N/A'}\n` +
-            `🪷 𝙵𝙾𝚁𝙼𝙰𝚃𝙾 ── ${info.format || 'MP3'}\n\n` +
+            `🍥 𝙲𝙰𝙽𝙰𝙻 ── ${channel}\n` +
+            `🪷 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${formatNumber(views)}\n` +
+            `🍥 𝙻𝙸𝙺𝙴𝚂 ── ${formatNumber(likes)}\n` +
+            `🪷 𝙳𝚄𝚁𝙰𝙲𝙸Ó𝙽 ── ${duration}\n` +
+            `🍥 𝙵𝙾𝚁𝙼𝙰𝚃𝙾 ── MP3\n\n` +
             `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...\n\n` +
             `ꨄ︎ ${global.nmcreador}`;
 
@@ -134,7 +175,10 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     } catch (error: any) {
         console.error(
             '[PLAY]',
-            error?.response?.data || error?.response?.status || error?.message || error
+            error?.response?.data ||
+            error?.response?.status ||
+            error?.message ||
+            error
         );
 
         await msg.reply(
