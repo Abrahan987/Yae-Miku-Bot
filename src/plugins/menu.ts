@@ -230,4 +230,3 @@ ${categoriesContent}
     }
 }
 
-lobal.rcanal", en la imagen, en "pluginData" o directamente en Baileys al intentar enviar al newsletter.
