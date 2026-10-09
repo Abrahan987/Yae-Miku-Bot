@@ -16,6 +16,7 @@ import qrcode from 'qrcode';
 import { loadDB } from '#db';
 import { loadPlugins, watchPlugins } from '#loader';
 import { handler } from '#handler';
+import { restoreSubBots } from './src/lib/subbot.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -250,6 +251,13 @@ ${rosa}─────── ❀ ───────${reset}
                     console.log(
                         `\n${lila}✿ Conectado con éxito al (${userName}) ✰${reset}\n`
                     );
+
+                    restoreSubBots(sock).catch((err) => {
+                        console.error(
+                            `${rojo}[ ERROR ] No se pudieron restaurar los sub-bots:${reset}`,
+                            err
+                        );
+                    });
                 }
 
                 if (connection === 'close') {
