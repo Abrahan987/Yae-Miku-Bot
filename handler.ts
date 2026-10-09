@@ -24,6 +24,8 @@ export function invalidateGroupCache(chatId: string): void {
     if (chatId) groupMetaCache.delete(chatId);
 }
 
+// La clave incluye el numero del bot: cada socket procesa el mensaje una sola vez,
+// pero el bot principal y los sub-bots no se bloquean entre si.
 function isDuplicate(key: string): boolean {
     if (processedIdsSet.has(key)) return true;
 
@@ -41,26 +43,19 @@ const normalizeNumber = (x: string) => String(x || "").split("@")[0].split(":")[
 
 const stripMexOne = (num: string) => num.startsWith('521') ? '52' + num.slice(3) : num;
 
-function getBotNumbers(sock: any): Set<string> {
-    const set = new Set<string>();
-    
-    const id = normalizeNumber(sock.user?.id || '');
-    if (id) {
-        set.add(id);
-        set.add(stripMexOne(id));
-    }
-    
-    return set;
-}
-
 function isPrimaryBot(sock: any, primary: string): boolean {
     if (!primary) return true;
-    
-    const botNumbers = getBotNumbers(sock);
+
+    const botId = normalizeNumber(sock.user?.id || '');
+    const botLid = normalizeNumber(sock.user?.lid || '');
     const primaryNorm = normalizeNumber(primary);
-    const primaryStrip = stripMexOne(primaryNorm);
-    
-    return botNumbers.has(primaryNorm) || botNumbers.has(primaryStrip);
+
+    const botIds = [botId, stripMexOne(botId), botLid, stripMexOne(botLid)]
+        .filter(Boolean);
+    const primaryIds = [primaryNorm, stripMexOne(primaryNorm)]
+        .filter(Boolean);
+
+    return botIds.some(id => primaryIds.includes(id));
 }
 
 function getAdminSet(participants: any[]): Set<string> {
@@ -76,6 +71,13 @@ function getAdminSet(participants: any[]): Set<string> {
                 adminSet.add(stripMexOne(clean));
                 adminSet.add(p.id);
                 adminSet.add(decodeJid(p.id));
+            }
+            if (p.lid) {
+                const clean = normalizeNumber(p.lid);
+                adminSet.add(clean);
+                adminSet.add(stripMexOne(clean));
+                adminSet.add(p.lid);
+                adminSet.add(decodeJid(p.lid));
             }
             if (p.phoneNumber) {
                 const clean = normalizeNumber(p.phoneNumber);
@@ -148,10 +150,18 @@ export function handler(sock: WASocket) {
                     const msgId = rawMsg?.key?.id;
                     if (!msgId || !rawMsg.message) continue;
 
-                    if (isDuplicate(msgId)) continue;
-
                     const jid = rawMsg.key.remoteJid || '';
                     if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) continue;
+
+                    // Bot primario: se filtra ANTES de marcar el mensaje como procesado,
+                    // asi un bot que no es primario nunca bloquea al que si lo es.
+                    if (jid.endsWith('@g.us')) {
+                        const primary = getPrimary(jid);
+                        if (primary && !isPrimaryBot(sock, primary)) continue;
+                    }
+
+                    const botKey = normalizeNumber(sock.user?.id || '');
+                    if (isDuplicate(`${botKey}:${msgId}`)) continue;
 
                     const msg = serialize(sock, rawMsg);
                     if (!msg || !msg.body) continue;
@@ -166,13 +176,6 @@ export function handler(sock: WASocket) {
 
                     const runFn = commandMap.get(cleanCmd) || commandMap.get(`${usedPrefix}${cleanCmd}`);
                     if (!runFn) continue;
-
-                    if (msg.isGroup) {
-                        const primary = getPrimary(msg.from);
-                        if (primary && !isPrimaryBot(sock, primary)) {
-                            continue;
-                        }
-                    }
 
                     let startPos = usedPrefix.length;
                     while (startPos < text.length && text.charCodeAt(startPos) === 32) {
@@ -226,10 +229,13 @@ export function handler(sock: WASocket) {
                                       adminSet.has(msgSender);
 
                             const rawBotJid = sock.user?.id || (sock.user as any)?.jid || '';
+                            const rawBotLid = (sock.user as any)?.lid || '';
 
                             const resolvedBotJid = UserJid(sock, msg.from, rawBotJid);
+                            const resolvedBotLid = rawBotLid ? UserJid(sock, msg.from, rawBotLid) : '';
 
                             const botBase = normalizeNumber(resolvedBotJid);
+                            const botLidBase = normalizeNumber(resolvedBotLid);
                             
                             const altBot = botBase.startsWith('521') 
                                 ? botBase.replace(/^521/, '52') 
@@ -239,9 +245,12 @@ export function handler(sock: WASocket) {
 
                             const botParticipant = participants.find((p: any) => {
                                 const pId = normalizeNumber(p.id);
+                                const pLid = p.lid ? normalizeNumber(p.lid) : '';
                                 return pId === botBase || 
                                        pId === altBot || 
-                                       pId === cleanBotMex;
+                                       pId === cleanBotMex || 
+                                       (botLidBase && pLid === botLidBase) ||
+                                       (pLid && pLid === botBase);
                             });
 
                             if (botParticipant) {
@@ -249,7 +258,8 @@ export function handler(sock: WASocket) {
                             } else {
                                 isBotAdmin = adminSet.has(botBase) || 
                                              adminSet.has(altBot) || 
-                                             adminSet.has(cleanBotMex);
+                                             adminSet.has(cleanBotMex) || 
+                                             (botLidBase ? adminSet.has(botLidBase) : false);
                             }
                         } catch (e) {
                             isBotAdmin = false;
