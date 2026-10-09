@@ -129,56 +129,49 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...\n\n` +
             `ꨄ︎ ${global.nmcreador}`;
 
-        const sendInfo = async () => {
+        if (imageUrl) {
             try {
-                if (imageUrl) {
-                    await sock.sendMessage(
-                        msg.from,
-                        { image: { url: imageUrl }, caption: infoText },
-                        { quoted: msg }
-                    );
-                } else {
-                    await msg.reply(infoText);
-                }
-            } catch {
-                await msg.reply(infoText).catch(() => {});
-            }
-        };
-
-        const fileName = `${cleanTitle(title)}.mp3`;
-
-        const sendAudio = async () => {
-            try {
-                await sock.sendMessage(
-                    msg.from,
-                    {
-                        audio: { url: info.download },
-                        mimetype: 'audio/mpeg',
-                        fileName,
-                        ptt: false
-                    },
-                    { quoted: msg }
-                );
-            } catch {
-                const audio = await axios.get(info.download, {
+                const image = await axios.get(imageUrl, {
                     responseType: 'arraybuffer',
-                    timeout: 120000
+                    timeout: 15000
                 });
 
                 await sock.sendMessage(
                     msg.from,
                     {
-                        audio: Buffer.from(audio.data),
-                        mimetype: 'audio/mpeg',
-                        fileName,
-                        ptt: false
+                        image: Buffer.from(image.data),
+                        caption: infoText
                     },
-                    { quoted: msg }
+                    {
+                        quoted: msg
+                    }
                 );
+            } catch {
+                await msg.reply(infoText);
             }
-        };
+        } else {
+            await msg.reply(infoText);
+        }
 
-        await Promise.all([sendInfo(), sendAudio()]);
+        const audio = await axios.get(info.download, {
+            responseType: 'arraybuffer',
+            timeout: 120000
+        });
+
+        const fileName = `${cleanTitle(title)}.mp3`;
+
+        await sock.sendMessage(
+            msg.from,
+            {
+                audio: Buffer.from(audio.data),
+                mimetype: 'audio/mpeg',
+                fileName,
+                ptt: false
+            },
+            {
+                quoted: msg
+            }
+        );
     } catch (error: any) {
         console.error(
             '[PLAY]',
