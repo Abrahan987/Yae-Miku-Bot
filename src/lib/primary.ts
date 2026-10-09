@@ -1,12 +1,5 @@
 import { db } from './database.ts';
 
-db.exec(`
-    CREATE TABLE IF NOT EXISTS group_primary (
-        groupJid TEXT PRIMARY KEY,
-        botNumber TEXT NOT NULL
-    )
-`);
-
 export function getPrimary(groupJid: string): string {
     const row = db
         .prepare('SELECT botNumber FROM group_primary WHERE groupJid = ?')

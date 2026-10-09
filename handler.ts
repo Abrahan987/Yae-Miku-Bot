@@ -42,14 +42,18 @@ const normalizeNumber = (x: string) => String(x || "").split("@")[0].split(":")[
 const stripMexOne = (num: string) => num.startsWith('521') ? '52' + num.slice(3) : num;
 
 function isPrimaryBot(sock: any, primary: string): boolean {
-    const mine = [
-        normalizeNumber(sock.user?.id || ''),
-        normalizeNumber(sock.user?.lid || '')
-    ]
-        .filter(Boolean)
-        .map(stripMexOne);
+    if (!primary) return true;
 
-    return mine.includes(stripMexOne(primary));
+    const botId = normalizeNumber(sock.user?.id || '');
+    const botLid = normalizeNumber(sock.user?.lid || '');
+    const primaryNorm = normalizeNumber(primary);
+
+    const botIds = [botId, stripMexOne(botId), botLid, stripMexOne(botLid)]
+        .filter(Boolean);
+    const primaryIds = [primaryNorm, stripMexOne(primaryNorm)]
+        .filter(Boolean);
+
+    return botIds.some(id => primaryIds.includes(id));
 }
 
 function getAdminSet(participants: any[]): Set<string> {
@@ -166,7 +170,9 @@ export function handler(sock: WASocket) {
 
                     if (msg.isGroup) {
                         const primary = getPrimary(msg.from);
-                        if (primary && !isPrimaryBot(sock, primary)) continue;
+                        if (primary && !isPrimaryBot(sock, primary)) {
+                            continue;
+                        }
                     }
 
                     let startPos = usedPrefix.length;

@@ -49,6 +49,11 @@ export async function loadDB() {
             until_time INTEGER DEFAULT 0,
             PRIMARY KEY (userJid, action)
         );
+
+        CREATE TABLE IF NOT EXISTS group_primary (
+            groupJid TEXT PRIMARY KEY,
+            botNumber TEXT NOT NULL
+        );
     `);
 }
 
