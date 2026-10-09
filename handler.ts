@@ -4,6 +4,7 @@ import { serialize, UserJid, decodeJid } from '#simple';
 import { getUser, getGroup, updateUser, incrementCommandCount } from '#db';
 import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
+import { isAntilinkEnabled, containsLink } from './src/lib/antilink.ts';
 import { LRUCache } from 'lru-cache';
 
 loadPlugins().catch(() => {});
@@ -24,8 +25,6 @@ export function invalidateGroupCache(chatId: string): void {
     if (chatId) groupMetaCache.delete(chatId);
 }
 
-// La clave incluye el numero del bot: cada socket procesa el mensaje una sola vez,
-// pero el bot principal y los sub-bots no se bloquean entre si.
 function isDuplicate(key: string): boolean {
     if (processedIdsSet.has(key)) return true;
 
@@ -106,6 +105,53 @@ async function getGroupMetadata(sock: any, chatId: string): Promise<any> {
     return null;
 }
 
+// Antilink: elimina mensajes con links de miembros que no son admin.
+// Devuelve true si el mensaje fue eliminado (y no debe seguir procesandose).
+async function handleAntilink(sock: any, msg: any, rawMsg: any, text: string): Promise<boolean> {
+    if (!msg.isGroup || rawMsg?.key?.fromMe) return false;
+    if (!isAntilinkEnabled(msg.from)) return false;
+    if (!containsLink(text)) return false;
+
+    try {
+        const metadata = await getGroupMetadata(sock, msg.from);
+        const participants: any[] = metadata?.participants || [];
+        const adminSet = getAdminSet(participants);
+
+        const rawParticipant = rawMsg?.key?.participant || rawMsg?.participant || msg.sender || '';
+        let resolved = rawParticipant;
+        try {
+            resolved = UserJid(sock, msg.from, rawParticipant) || rawParticipant;
+        } catch {}
+
+        const nums = [resolved, msg.sender, rawParticipant]
+            .map(normalizeNumber)
+            .filter(Boolean)
+            .flatMap((n: string) => [n, stripMexOne(n)]);
+
+        const ownerNum = normalizeNumber((global as any).owner);
+        const esOwner = !!ownerNum && nums.some((n: string) => n === ownerNum || n === stripMexOne(ownerNum));
+        const esAdmin = nums.some((n: string) => adminSet.has(n)) || adminSet.has(rawParticipant) || adminSet.has(msg.sender);
+
+        if (esOwner || esAdmin) return false;
+
+        await sock.sendMessage(msg.from, { delete: rawMsg.key });
+
+        const mentionJid = resolved.endsWith('@s.whatsapp.net') ? resolved : rawParticipant;
+        void sock.sendMessage(
+            msg.from,
+            {
+                text: `🚫 *ANTILINK*\n\n🪷 @${normalizeNumber(mentionJid)} los links no están permitidos en este grupo.`,
+                mentions: [mentionJid]
+            }
+        ).catch(() => {});
+
+        return true;
+    } catch (e) {
+        console.error('[ANTILINK ERROR]:', e);
+        return false;
+    }
+}
+
 function extractCommandInfo(text: string): { cleanCmd: string; usedPrefix: string } | null {
     const prefixes = (global as any).prefix || '.';
     let usedPrefix = '';
@@ -168,6 +214,8 @@ export function handler(sock: WASocket) {
 
                     const text = msg.body.trim();
                     if (!text) continue;
+
+                    if (await handleAntilink(sock, msg, rawMsg, text)) continue;
 
                     const parsed = extractCommandInfo(text);
                     if (!parsed) continue;
