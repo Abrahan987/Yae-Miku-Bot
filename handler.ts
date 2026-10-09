@@ -23,11 +23,13 @@ export function invalidateGroupCache(chatId: string): void {
     if (chatId) groupMetaCache.delete(chatId);
 }
 
-function isDuplicate(msgId: string): boolean {
-    if (processedIdsSet.has(msgId)) return true;
+// La clave incluye el id del socket (bot principal o sub-bot), así el mismo mensaje
+// puede ser procesado por cada bot que lo recibe sin que se marque como duplicado.
+function isDuplicate(key: string): boolean {
+    if (processedIdsSet.has(key)) return true;
 
-    processedIdsSet.add(msgId);
-    processedIdsQueue.push(msgId);
+    processedIdsSet.add(key);
+    processedIdsQueue.push(key);
 
     if (processedIdsQueue.length > DUP_LIMIT) {
         const oldest = processedIdsQueue.shift();
@@ -72,14 +74,16 @@ function getAdminSet(participants: any[]): Set<string> {
 }
 
 async function getGroupMetadata(sock: any, chatId: string): Promise<any> {
-    const cached = groupMetaCache.get(chatId);
+    const botKey = normalizeNumber(sock.user?.id || '');
+    const cacheKey = `${botKey}:${chatId}`;
+    const cached = groupMetaCache.get(cacheKey);
     if (cached?.metadata) {
         return cached.metadata;
     }
     try {
         const freshMeta = await sock.groupMetadata(chatId);
         if (freshMeta) {
-            groupMetaCache.set(chatId, { metadata: freshMeta, ts: Date.now() });
+            groupMetaCache.set(cacheKey, { metadata: freshMeta, ts: Date.now() });
             return freshMeta;
         }
     } catch {}
@@ -130,7 +134,8 @@ export function handler(sock: WASocket) {
                     const msgId = rawMsg?.key?.id;
                     if (!msgId || !rawMsg.message) continue;
 
-                    if (isDuplicate(msgId)) continue;
+                    const botKey = normalizeNumber(sock.user?.id || '');
+                    if (isDuplicate(`${botKey}:${msgId}`)) continue;
 
                     const jid = rawMsg.key.remoteJid || '';
                     if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) continue;
