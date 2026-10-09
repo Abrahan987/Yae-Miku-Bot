@@ -10,6 +10,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode';
 import { handler } from '#handler';
+import { commandMap } from '#loader';
 
 const subsDir = path.join(process.cwd(), 'subs');
 if (!fs.existsSync(subsDir)) fs.mkdirSync(subsDir, { recursive: true });
@@ -97,13 +98,14 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
 
         sock.ev.on('creds.update', saveCreds);
 
-        // IMPORTANTE: conectar el handler de comandos al socket del sub-bot
-        // (sin esto el sub-bot vincula pero nunca responde a nada)
-        // El handler usa los comandos compartidos cargados por el bot principal
+        // Conectar el handler de comandos al socket del sub-bot
         try {
+            console.log(`[SUBBOT ${phone}] Conectando handler, comandos disponibles: ${commandMap.size}`);
             await handler(sock);
+            console.log(`[SUBBOT ${phone}] Handler conectado exitosamente`);
         } catch (e) {
-            console.error('[SUBBOT HANDLER ERROR]', e);
+            console.error(`[SUBBOT ${phone} HANDLER ERROR]`, e);
+            mainSocket.sendMessage(mainChat, { text: `⚠️ Error al conectar handler del sub-bot: ${e}` }, { quoted: mainMsg }).catch(() => {});
         }
 
         // Código de 8 dígitos
