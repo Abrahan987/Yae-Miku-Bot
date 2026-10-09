@@ -1,357 +1,215 @@
 import axios from 'axios';
 import ytsearch from 'yt-search';
-import { deflateSync } from 'node:zlib';
+import { deflateSync, crc32 } from 'node:zlib';
 
 export const command = ['play', 'mp3', 'ytmp3', 'ytaudio', 'playaudio'];
 export const category = 'descargas';
-export const description = 'Busca y descarga canciones de YouTube en formato MP3 con reproductor visual realista.';
+export const description = 'Busca y descarga canciones de YouTube en MP3 con reproductor visual.';
 
 const processing = new Set<string>();
-const playerCache = new Map<string, any>();
 
-const cleanTitle = (title: string) => {
-    return title
-        .replace(/[\\/:*?"<>|]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 100);
+const cleanTitle = (title: string) =>
+    title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
+
+type RGBA = { r: number; g: number; b: number; a?: number };
+
+// Fuente bitmap 5x7 (solo mayusculas, numeros y simbolos basicos)
+const FONT: Record<string, number[]> = {
+    ' ': [0, 0, 0, 0, 0, 0, 0],
+    '0': [14, 17, 19, 21, 25, 17, 14], '1': [4, 12, 4, 4, 4, 4, 14],
+    '2': [14, 17, 1, 2, 4, 8, 31], '3': [30, 1, 1, 14, 1, 1, 30],
+    '4': [2, 6, 10, 18, 31, 2, 2], '5': [31, 16, 30, 1, 1, 17, 14],
+    '6': [14, 16, 30, 17, 17, 17, 14], '7': [31, 1, 2, 4, 8, 8, 8],
+    '8': [14, 17, 17, 14, 17, 17, 14], '9': [14, 17, 17, 15, 1, 1, 14],
+    A: [14, 17, 17, 31, 17, 17, 17], B: [30, 17, 17, 30, 17, 17, 30],
+    C: [14, 17, 16, 16, 16, 17, 14], D: [30, 17, 17, 17, 17, 17, 30],
+    E: [31, 16, 16, 30, 16, 16, 31], F: [31, 16, 16, 30, 16, 16, 16],
+    G: [14, 17, 16, 23, 17, 17, 15], H: [17, 17, 17, 31, 17, 17, 17],
+    I: [14, 4, 4, 4, 4, 4, 14], J: [7, 2, 2, 2, 2, 18, 12],
+    K: [17, 18, 20, 24, 20, 18, 17], L: [16, 16, 16, 16, 16, 16, 31],
+    M: [17, 27, 21, 21, 17, 17, 17], N: [17, 25, 21, 19, 17, 17, 17],
+    O: [14, 17, 17, 17, 17, 17, 14], P: [30, 17, 17, 30, 16, 16, 16],
+    Q: [14, 17, 17, 17, 21, 18, 13], R: [30, 17, 17, 30, 20, 18, 17],
+    S: [15, 16, 16, 14, 1, 1, 30], T: [31, 4, 4, 4, 4, 4, 4],
+    U: [17, 17, 17, 17, 17, 17, 14], V: [17, 17, 17, 17, 10, 10, 4],
+    W: [17, 17, 17, 21, 21, 27, 17], X: [17, 17, 10, 4, 10, 17, 17],
+    Y: [17, 17, 10, 4, 4, 4, 4], Z: [31, 1, 2, 4, 8, 16, 31],
+    '-': [0, 0, 0, 31, 0, 0, 0], '.': [0, 0, 0, 0, 0, 12, 12],
+    ':': [0, 12, 12, 0, 12, 12, 0], '(': [2, 4, 8, 8, 8, 4, 2],
+    ')': [8, 4, 2, 2, 2, 4, 8], '&': [14, 17, 10, 4, 10, 17, 14],
+    '!': [4, 4, 4, 4, 4, 0, 4], '?': [14, 17, 1, 2, 4, 0, 4],
+    "'": [4, 4, 0, 0, 0, 0, 0], ',': [0, 0, 0, 0, 12, 4, 8],
+    '/': [1, 2, 4, 8, 16, 0, 0], '#': [10, 31, 10, 10, 31, 10, 10]
 };
 
-const formatNumber = (value: any) => {
-    if (typeof value !== 'number') return 'N/A';
-    return value.toLocaleString('es-CO');
-};
+function createCanvas(width: number, height: number) {
+    const px = new Uint8Array(width * height * 4);
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
-const color = (r: number, g: number, b: number, a = 255) => ({ r, g, b, a });
-
-const rgbaToInt = (c: { r: number; g: number; b: number; a: number }) =>
-    (c.a << 24) | (c.b << 16) | (c.g << 8) | c.r;
-
-function createBuffer(width: number, height: number) {
-    const pixels = new Uint8ClampedArray(width * height * 4);
-    const setPixel = (x: number, y: number, c: { r: number; g: number; b: number; a?: number }) => {
-        if (x < 0 || x >= width || y < 0 || y >= height) return;
-        const idx = (y * width + x) * 4;
-        pixels[idx] = c.r;
-        pixels[idx + 1] = c.g;
-        pixels[idx + 2] = c.b;
-        pixels[idx + 3] = c.a ?? 255;
+    const set = (x: number, y: number, c: RGBA) => {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        const i = (y * width + x) * 4;
+        px[i] = c.r; px[i + 1] = c.g; px[i + 2] = c.b; px[i + 3] = c.a ?? 255;
     };
 
-    const fillRect = (x: number, y: number, w: number, h: number, c: { r: number; g: number; b: number; a?: number }) => {
-        for (let yy = y; yy < y + h; yy++) {
-            for (let xx = x; xx < x + w; xx++) setPixel(xx, yy, c);
+    const rect = (x: number, y: number, w: number, h: number, c: RGBA) => {
+        for (let yy = Math.max(0, y); yy < Math.min(height, y + h); yy++)
+            for (let xx = Math.max(0, x); xx < Math.min(width, x + w); xx++) set(xx, yy, c);
+    };
+
+    const circle = (cx: number, cy: number, r: number, c: RGBA) => {
+        for (let y = -r; y <= r; y++)
+            for (let x = -r; x <= r; x++)
+                if (x * x + y * y <= r * r) set(cx + x, cy + y, c);
+    };
+
+    const rounded = (x: number, y: number, w: number, h: number, r: number, c: RGBA) => {
+        rect(x + r, y, w - 2 * r, h, c);
+        rect(x, y + r, w, h - 2 * r, c);
+        circle(x + r, y + r, r, c);
+        circle(x + w - r - 1, y + r, r, c);
+        circle(x + r, y + h - r - 1, r, c);
+        circle(x + w - r - 1, y + h - r - 1, r, c);
+    };
+
+    const triangle = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, c: RGBA) => {
+        const minX = Math.min(x1, x2, x3), maxX = Math.max(x1, x2, x3);
+        const minY = Math.min(y1, y2, y3), maxY = Math.max(y1, y2, y3);
+        const area = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) =>
+            (ax - cx) * (by - cy) - (bx - cx) * (ay - cy);
+        for (let y = minY; y <= maxY; y++) {
+            for (let x = minX; x <= maxX; x++) {
+                const d1 = area(x, y, x1, y1, x2, y2);
+                const d2 = area(x, y, x2, y2, x3, y3);
+                const d3 = area(x, y, x3, y3, x1, y1);
+                const neg = d1 < 0 || d2 < 0 || d3 < 0;
+                const pos = d1 > 0 || d2 > 0 || d3 > 0;
+                if (!(neg && pos)) set(x, y, c);
+            }
         }
     };
 
-    const drawHLine = (x1: number, x2: number, y: number, c: { r: number; g: number; b: number; a?: number }) => {
-        const start = Math.min(x1, x2);
-        const end = Math.max(x1, x2);
-        for (let x = start; x <= end; x++) setPixel(x, y, c);
-    };
-
-    const drawVLine = (y1: number, y2: number, x: number, c: { r: number; g: number; b: number; a?: number }) => {
-        const start = Math.min(y1, y2);
-        const end = Math.max(y1, y2);
-        for (let y = start; y <= end; y++) setPixel(x, y, c);
-    };
-
-    const drawLine = (x1: number, y1: number, x2: number, y2: number, c: { r: number; g: number; b: number; a?: number }, thickness = 1) => {
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        const steps = Math.max(Math.abs(dx), Math.abs(dy));
+    const line = (x1: number, y1: number, x2: number, y2: number, c: RGBA, t = 1) => {
+        const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)) || 1;
         for (let i = 0; i <= steps; i++) {
-            const x = Math.round(x1 + (dx * i) / steps);
-            const y = Math.round(y1 + (dy * i) / steps);
-            for (let yy = -thickness; yy <= thickness; yy++) {
-                for (let xx = -thickness; xx <= thickness; xx++) setPixel(x + xx, y + yy, c);
-            }
+            const x = Math.round(x1 + ((x2 - x1) * i) / steps);
+            const y = Math.round(y1 + ((y2 - y1) * i) / steps);
+            circle(x, y, t, c);
         }
     };
 
-    const drawCircle = (cx: number, cy: number, radius: number, fill: boolean, c: { r: number; g: number; b: number; a?: number }) => {
-        for (let y = -radius; y <= radius; y++) {
-            for (let x = -radius; x <= radius; x++) {
-                if (x * x + y * y <= radius * radius) {
-                    if (fill) setPixel(cx + x, cy + y, c);
-                    else {
-                        const d = Math.sqrt(x * x + y * y);
-                        if (Math.abs(d - radius) < 1.5) setPixel(cx + x, cy + y, c);
-                    }
-                }
-            }
+    const text = (x: number, y: number, str: string, c: RGBA, scale = 3) => {
+        let cx = x;
+        for (const ch of str.toUpperCase()) {
+            const glyph = FONT[ch] || FONT[' '];
+            for (let row = 0; row < 7; row++)
+                for (let col = 0; col < 5; col++)
+                    if ((glyph[row] >> (4 - col)) & 1) rect(cx + col * scale, y + row * scale, scale, scale, c);
+            cx += 6 * scale;
         }
     };
 
-    const drawRoundedRect = (x: number, y: number, w: number, h: number, r: number, c: { r: number; g: number; b: number; a?: number }) => {
-        fillRect(x + r, y, w - r * 2, h, c);
-        fillRect(x, y + r, w, h - r * 2, c);
-        drawCircle(x + r, y + r, r, true, c);
-        drawCircle(x + w - r, y + r, r, true, c);
-        drawCircle(x + r, y + h - r, r, true, c);
-        drawCircle(x + w - r, y + h - r, r, true, c);
-    };
-
-    const fontMap: Record<string, number[]> = {
-        ' ': [0,0,0,0,0],
-        '0': [0b01110,0b10001,0b10011,0b10101,0b10001,0b10001,0b01110],
-        '1': [0b00100,0b01100,0b00100,0b00100,0b00100,0b00100,0b01110],
-        '2': [0b01110,0b10001,0b00001,0b00010,0b00100,0b01000,0b11111],
-        '3': [0b11110,0b00001,0b00001,0b01110,0b00001,0b00001,0b11110],
-        '4': [0b00010,0b00110,0b01010,0b10010,0b11111,0b00010,0b00010],
-        '5': [0b11111,0b10000,0b10000,0b11110,0b00001,0b00001,0b11110],
-        '6': [0b01110,0b10000,0b10000,0b11110,0b10001,0b10001,0b01110],
-        '7': [0b11111,0b00001,0b00010,0b00100,0b01000,0b01000,0b01000],
-        '8': [0b01110,0b10001,0b10001,0b01110,0b10001,0b10001,0b01110],
-        '9': [0b01110,0b10001,0b10001,0b01111,0b00001,0b00001,0b01110],
-        'A': [0b01110,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001],
-        'B': [0b11110,0b10001,0b10001,0b11110,0b10001,0b10001,0b11110],
-        'C': [0b01110,0b10001,0b10000,0b10000,0b10000,0b10001,0b01110],
-        'D': [0b11110,0b10001,0b10001,0b10001,0b10001,0b10001,0b11110],
-        'E': [0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b11111],
-        'F': [0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b10000],
-        'G': [0b01110,0b10001,0b10000,0b10111,0b10001,0b10001,0b01110],
-        'H': [0b10001,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001],
-        'I': [0b11111,0b00100,0b00100,0b00100,0b00100,0b00100,0b11111],
-        'J': [0b00111,0b00010,0b00010,0b00010,0b10010,0b10010,0b01100],
-        'K': [0b10001,0b10010,0b10100,0b11000,0b10100,0b10010,0b10001],
-        'L': [0b10000,0b10000,0b10000,0b10000,0b10000,0b10000,0b11111],
-        'M': [0b1000001,0b1100011,0b1010101,0b1001001,0b1000001,0b1000001,0b1000001],
-        'N': [0b10001,0b11001,0b10101,0b10011,0b10001,0b10001,0b10001],
-        'O': [0b01110,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
-        'P': [0b11110,0b10001,0b10001,0b11110,0b10000,0b10000,0b10000],
-        'Q': [0b01110,0b10001,0b10001,0b10001,0b10101,0b10010,0b01101],
-        'R': [0b11110,0b10001,0b10001,0b11110,0b10100,0b10010,0b10001],
-        'S': [0b01111,0b10000,0b10000,0b01110,0b00001,0b00001,0b11110],
-        'T': [0b11111,0b00100,0b00100,0b00100,0b00100,0b00100,0b00100],
-        'U': [0b10001,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
-        'V': [0b10001,0b10001,0b10001,0b01010,0b01010,0b00100,0b00100],
-        'W': [0b10001,0b10001,0b10001,0b10001,0b10101,0b10101,0b01010],
-        'X': [0b10001,0b10001,0b01010,0b00100,0b01010,0b10001,0b10001],
-        'Y': [0b10001,0b01010,0b00100,0b00100,0b00100,0b00100,0b00100],
-        'Z': [0b11111,0b00001,0b00010,0b00100,0b01000,0b10000,0b11111],
-        '-': [0,0,0,0b11111,0,0,0],
-        '_': [0,0,0,0,0,0,0b11111],
-        '.': [0,0,0,0,0,0b01000,0b01000],
-        ':': [0,0,0b01000,0,0b01000,0,0],
-        '/': [0b00001,0b00010,0b00100,0b01000,0b10000,0,0],
-        '#': [0b01010,0b11111,0b01010,0b01010,0b11111,0b01010,0b01010],
-        '?': [0b01110,0b10001,0b00001,0b00010,0b00100,0b00000,0b00100],
-        '!': [0b00100,0b00100,0b00100,0b00100,0b00100,0b00000,0b00100],
-        '(': [0b00010,0b00100,0b01000,0b01000,0b01000,0b00100,0b00010],
-        ')': [0b01000,0b00100,0b00010,0b00010,0b00010,0b00100,0b01000],
-        '&': [0b01110,0b10001,0b01010,0b00100,0b01010,0b10001,0b01110],
-        '+': [0,0,0b00100,0b00100,0b11111,0b00100,0b00100],
-        '=': [0,0,0b11111,0,0b11111,0,0],
-        '[': [0b01110,0b01000,0b01000,0b01000,0b01000,0b01000,0b01110],
-        ']': [0b01110,0b00010,0b00010,0b00010,0b00010,0b00010,0b01110],
-        '*': [0,0,0,0b01010,0b00100,0,0],
-        'a': [0,0,0b01110,0b00001,0b01111,0b10001,0b01111],
-        'b': [0b10000,0b10000,0b10110,0b11001,0b10001,0b10001,0b01110],
-        'c': [0,0,0b01110,0b10001,0b10000,0b10001,0b01110],
-        'd': [0b00001,0b00001,0b01111,0b10001,0b10001,0b10001,0b01110],
-        'e': [0,0,0b01110,0b10001,0b11111,0b10000,0b01110],
-        'g': [0,0,0b01111,0b10001,0b10001,0b01111,0b00001,0b01110],
-        'h': [0b10000,0b10000,0b10110,0b11001,0b10001,0b10001,0b10001],
-        'i': [0,0,0b00100,0,0b00100,0b00100,0b00100],
-        'j': [0,0,0b00010,0,0b00010,0b10010,0b01100],
-        'k': [0b10000,0b10000,0b10010,0b10100,0b11000,0b10100,0b10010],
-        'l': [0b00100,0b00100,0b00100,0b00100,0b00100,0b00100,0b00110],
-        'm': [0,0,0b11011,0b10101,0b10101,0b10101,0b10001],
-        'n': [0,0,0b10110,0b11001,0b10001,0b10001,0b10001],
-        'o': [0,0,0b01110,0b10001,0b10001,0b10001,0b01110],
-        'p': [0,0,0b11110,0b10001,0b10001,0b11110,0b10000,0b10000],
-        'q': [0,0,0b01111,0b10001,0b10001,0b01111,0b00001,0b00001],
-        'r': [0,0,0b10110,0b11001,0b10000,0b10000,0b10000],
-        's': [0,0,0b01110,0b10000,0b01110,0b00001,0b11110],
-        't': [0b00100,0b01110,0b00100,0b00100,0b00100,0b00100,0b00011],
-        'u': [0,0,0b10001,0b10001,0b10001,0b10001,0b01111],
-        'v': [0,0,0b10001,0b10001,0b10001,0b01010,0b00100],
-        'w': [0,0,0b10001,0b10101,0b10101,0b10101,0b01010],
-        'x': [0,0,0b10001,0b01010,0b00100,0b01010,0b10001],
-        'y': [0,0,0b10001,0b10001,0b01111,0b00001,0b01110],
-        'z': [0,0,0b11111,0b00010,0b00100,0b01000,0b11111],
-        ',': [0,0,0,0,0,0b01000,0b10000],
-        ';': [0,0,0b01000,0,0b01000,0b10000,0],
-        '"': [0b01100,0b01100,0,0,0,0,0],
-        "'": [0b00100,0b00100,0,0,0,0,0]
-    };
-
-    const drawText = (x: number, y: number, text: string, colorValue: { r: number; g: number; b: number; a?: number }, scale = 2) => {
-        const target = text.toUpperCase();
-        let cursor = x;
-        for (const ch of target) {
-            const map = fontMap[ch] || fontMap[' '];
-            for (let row = 0; row < 7; row++) {
-                for (let col = 0; col < 5; col++) {
-                    if ((map[row] >> (4 - col)) & 1) {
-                        fillRect(cursor + col * scale, y + row * scale, scale, scale, colorValue);
-                    }
-                }
-            }
-            cursor += 6 * scale;
-        }
-    };
-
-    const createPng = () => {
-        const stride = width * 4;
-        const raw = new Uint8Array(stride * height);
-        let offset = 0;
+    const png = () => {
+        const raw = Buffer.alloc((width * 4 + 1) * height);
         for (let y = 0; y < height; y++) {
-            raw[offset++] = 0;
-            for (let x = 0; x < width; x++) {
-                const i = (y * width + x) * 4;
-                raw[offset++] = pixels[i];
-                raw[offset++] = pixels[i + 1];
-                raw[offset++] = pixels[i + 2];
-                raw[offset++] = pixels[i + 3];
-            }
+            const o = y * (width * 4 + 1);
+            raw[o] = 0;
+            Buffer.from(px.buffer, y * width * 4, width * 4).copy(raw, o + 1);
         }
-
-        const header = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        const chunk = (type: string, data: Buffer) => {
+            const len = Buffer.alloc(4);
+            len.writeUInt32BE(data.length);
+            const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+            const crc = Buffer.alloc(4);
+            crc.writeUInt32BE(crc32(body) >>> 0);
+            return Buffer.concat([len, body, crc]);
+        };
         const ihdr = Buffer.alloc(13);
         ihdr.writeUInt32BE(width, 0);
         ihdr.writeUInt32BE(height, 4);
-        ihdr[8] = 8;
-        ihdr[9] = 6;
-        ihdr[10] = 0;
-        ihdr[11] = 0;
-        ihdr[12] = 0;
-
-        const chunks: Buffer[] = [];
-        const addChunk = (type: string, data: Buffer) => {
-            const chunk = Buffer.alloc(12 + data.length);
-            chunk.writeUInt32BE(data.length, 0);
-            chunk.write(type, 4);
-            data.copy(chunk, 8);
-            const crc = Buffer.alloc(4);
-            crc.writeUInt32BE(0, 0);
-            const crcValue = require('node:zlib').crc32(data); 
-            chunk.writeUInt32BE(crcValue, 8 + data.length);
-            chunks.push(chunk);
-        };
-
-        const bytes = Buffer.concat([
-            header,
-            Buffer.concat([
-                Buffer.from([0x00, 0x00, 0x00, 0x0D]),
-                Buffer.from('IHDR'),
-                ihdr,
-                Buffer.alloc(4)
-            ])
+        ihdr[8] = 8; ihdr[9] = 6;
+        return Buffer.concat([
+            Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+            chunk('IHDR', ihdr),
+            chunk('IDAT', deflateSync(raw)),
+            chunk('IEND', Buffer.alloc(0))
         ]);
-        // rebuild with proper CRC handling
-        const chunksOut: Buffer[] = [];
-        chunksOut.push(Buffer.from([0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52]));
-        chunksOut.push(ihdr);
-        chunksOut.push(Buffer.alloc(0));
-
-        const final = Buffer.alloc(8 + 4 + 4 + 13 + 4);
-        final.writeUInt32BE(13, 0);
-        final.write('IHDR', 4);
-        ihdr.copy(final, 8);
-        const crcIhdr = require('node:zlib').crc32(ihdr);
-        final.writeUInt32BE(crcIhdr >>> 0, 8 + 13);
-
-        const idatData = Buffer.from(deflateSync(raw));
-        const idat = Buffer.alloc(12 + idatData.length);
-        idat.writeUInt32BE(idatData.length, 0);
-        idat.write('IDAT', 4);
-        idatData.copy(idat, 8);
-        const crcI = require('node:zlib').crc32(idatData);
-        idat.writeUInt32BE(crcI >>> 0, 8 + idatData.length);
-
-        const iend = Buffer.alloc(12);
-        iend.writeUInt32BE(0, 0);
-        iend.write('IEND', 4);
-        const crcEnd = require('node:zlib').crc32(Buffer.alloc(0));
-        iend.writeUInt32BE(crcEnd >>> 0, 8);
-
-        return Buffer.concat([header, final, idat, iend]);
     };
 
-    return { pixels, setPixel, fillRect, drawLine, drawCircle, drawRoundedRect, drawText, createPng };
+    return { rect, circle, rounded, triangle, line, text, png };
 }
 
-function generatePlayerArt({ title, author, duration, current = 0 }: { title: string; author: string; duration: string; current?: number }) {
-    const width = 900;
-    const height = 980;
-    const gfx = createBuffer(width, height);
-    const bg = color(14, 18, 21, 255);
-    const panel = color(26, 29, 33, 255);
-    const panel2 = color(38, 41, 45, 255);
-    const text = color(244, 246, 249, 255);
-    const muted = color(154, 158, 167, 255);
-    const green = color(30, 215, 96, 255);
-    const dark = color(15, 15, 15, 255);
-
-    gfx.fillRect(0, 0, width, height, bg);
-    gfx.drawRoundedRect(72, 40, width - 144, height - 120, 34, panel2);
-    gfx.drawRoundedRect(95, 68, width - 190, 560, 22, color(18, 18, 18, 255));
-
-    // album thumbnail area
-    gfx.fillRect(120, 100, width - 240, 480, color(88, 88, 88, 255));
-    gfx.fillRect(120, 100, width - 240, 480, color(70, 70, 70, 180));
-
-    // stylized art in center
-    for (let i = 0; i < 10; i++) {
-        const y = 120 + i * 40;
-        gfx.drawLine(180 + i * 20, y, 260 + i * 20, y + 80, color(0, 0, 0, 120), 2);
-    }
-    gfx.drawLine(260, 170, 420, 80, color(0, 0, 0, 120), 10);
-    gfx.drawLine(420, 80, 580, 170, color(0, 0, 0, 120), 10);
-    gfx.drawLine(580, 170, 720, 80, color(0, 0, 0, 120), 10);
-    gfx.drawLine(720, 80, 790, 170, color(0, 0, 0, 120), 10);
-    gfx.drawLine(260, 270, 550, 520, color(0, 0, 0, 120), 11);
-    gfx.drawLine(550, 520, 760, 260, color(0, 0, 0, 120), 11);
-
-    // song metadata
-    const shortTitle = title.length > 28 ? `${title.slice(0, 25)}...` : title;
-    const shortAuthor = author.length > 24 ? `${author.slice(0, 21)}...` : author;
-
-    gfx.drawText(108, 660, shortAuthor || 'unknown', muted, 3);
-    gfx.drawText(108, 730, shortTitle || 'youtube audio', text, 4);
-
-    // progress bar
-    gfx.drawRoundedRect(110, 815, 660, 10, 5, color(75, 75, 75, 255));
-    const total = Math.max(60, parseFloat(String(duration).replace(/[^0-9]/g, '')) || 120);
-    const currentSeconds = Math.min(current || 35, total);
-    const progressRatio = clamp(currentSeconds / total, 0, 1);
-    const progressWidth = 660 * progressRatio;
-    gfx.drawRoundedRect(110, 815, progressWidth, 10, 5, green);
-    gfx.drawCircle(110 + progressWidth, 820, 8, true, green);
-
-    const elapsed = `${Math.floor(currentSeconds / 60)}:${String(Math.floor(currentSeconds % 60)).padStart(2, '0')}`;
-    const totalLabel = `${Math.floor(total / 60)}:${String(Math.floor(total % 60)).padStart(2, '0')}`;
-    gfx.drawText(108, 840, elapsed, muted, 2);
-    gfx.drawText(650, 840, totalLabel, muted, 2);
-
-    // controls
-    const btnY = 900;
-    gfx.drawText(155, btnY, '⏮', green, 4);
-    gfx.drawText(285, btnY, '⏪', green, 4);
-    gfx.drawRoundedRect(395, 888, 110, 110, 55, color(255, 255, 255, 255));
-    gfx.drawRoundedRect(413, 908, 74, 70, 25, color(20, 20, 20, 255));
-    gfx.drawText(426, 908, 'II', color(0,0,0,255), 4);
-    gfx.drawText(585, btnY, '⏩', green, 4);
-    gfx.drawText(700, btnY, '↻', green, 4);
-
-    // small green play button on right, similar to reference
-    gfx.drawCircle(770, 702, 36, true, green);
-    gfx.drawLine(760, 688, 760, 720, color(255,255,255,255), 5);
-    gfx.drawLine(760, 688, 785, 704, color(255,255,255,255), 5);
-    gfx.drawLine(785, 704, 760, 720, color(255,255,255,255), 5);
-
-    return gfx.createPng();
-}
-
-const useRealPlayerImage = async (sock: any, msg: any, title: string, author: string, duration: string, currentTime: number = 0) => {
-    const img = generatePlayerArt({ title, author, duration, current: currentTime });
-    const chatId = msg.from || msg.chat;
-    return sock.sendMessage(chatId, { image: img, caption: `${title} • ${author}` }, { quoted: msg });
+const toSeconds = (ts: string): number => {
+    const parts = String(ts || '').split(':').map(Number);
+    if (!parts.length || parts.some(isNaN)) return 0;
+    return parts.reduce((acc, n) => acc * 60 + n, 0);
 };
+
+const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+async function buildPlayerImage(opts: {
+    title: string; author: string; durationText: string; thumb: Buffer | null;
+}): Promise<Buffer> {
+    const W = 720, H = 960;
+    const g = createCanvas(W, H);
+
+    const bg: RGBA = { r: 18, g: 18, b: 18 };
+    const card: RGBA = { r: 36, g: 34, b: 34 };
+    const white: RGBA = { r: 255, g: 255, b: 255 };
+    const muted: RGBA = { r: 170, g: 170, b: 170 };
+    const green: RGBA = { r: 30, g: 215, b: 96 };
+    const dark: RGBA = { r: 15, g: 15, b: 15 };
+
+    g.rect(0, 0, W, H, bg);
+    g.rounded(20, 20, W - 40, H - 40, 40, card);
+    g.text(190, 55, 'PLAYING WITH MUSIC', muted, 3);
+
+    // Portada (placeholder; si hay thumbnail se intenta reemplazar abajo)
+    g.rect(60, 110, 600, 420, { r: 150, g: 150, b: 150 });
+
+    const total = toSeconds(opts.durationText) || 180;
+    const current = Math.floor(total * 0.35);
+
+    const title = opts.title.length > 22 ? opts.title.slice(0, 21) + '.' : opts.title;
+    const author = opts.author.length > 30 ? opts.author.slice(0, 29) + '.' : opts.author;
+    g.text(60, 570, title, white, 5);
+    g.text(60, 625, author, muted, 3);
+
+    // Corazon verde (circulo + triangulo simple)
+    g.circle(590, 585, 14, green);
+    g.circle(618, 585, 14, green);
+    g.triangle(573, 592, 635, 592, 604, 625, green);
+
+    // Barra de progreso
+    const barX = 60, barW = 600, barY = 690;
+    g.rounded(barX, barY, barW, 8, 4, { r: 90, g: 90, b: 90 });
+    const filled = Math.max(8, Math.floor(barW * (current / total)));
+    g.rounded(barX, barY, filled, 8, 4, white);
+    g.text(60, 715, fmt(current), muted, 3);
+    g.text(660 - fmt(total).length * 18, 715, fmt(total), muted, 3);
+
+    // Controles
+    const cy = 840;
+    // shuffle (dos lineas cruzadas)
+    g.line(75, cy - 14, 125, cy + 14, green, 3);
+    g.line(75, cy + 14, 125, cy - 14, green, 3);
+    // anterior
+    g.rect(190, cy - 20, 6, 40, white);
+    g.triangle(228, cy - 20, 228, cy + 20, 198, cy, white);
+    // play/pause grande
+    g.circle(360, cy, 55, white);
+    g.rect(340, cy - 24, 12, 48, dark);
+    g.rect(368, cy - 24, 12, 48, dark);
+    // siguiente
+    g.triangle(492, cy - 20, 492, cy + 20, 522, cy, white);
+    g.rect(524, cy - 20, 6, 40, white);
+    // repetir (cuadro verde)
+    g.rect(600, cy - 16, 44, 6, green);
+    g.rect(600, cy + 10, 44, 6, green);
+    g.rect(600, cy - 16, 6, 32, green);
+    g.rect(638, cy - 16, 6, 32, green);
+
+    return g.png();
+}
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const text = extra.args.join(' ').trim();
@@ -365,11 +223,9 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
     }
 
     const requestKey = text.toLowerCase();
-
     if (processing.has(requestKey)) {
         return msg.reply(`𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙴𝙽 𝙿𝚁𝙾𝙲𝙴𝚂𝙾 ❀`);
     }
-
     processing.add(requestKey);
 
     try {
@@ -400,31 +256,35 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         const info = data.data;
         const title = searchData?.title || (info.title && info.title !== '-' ? info.title : null) || 'YouTube Audio';
         const author = searchData?.author?.name || (info.author && info.author !== '-' ? info.author : null) || 'Desconocido';
-        const duration = searchData?.timestamp || searchData?.duration || 'N/A';
+        const duration = searchData?.timestamp || searchData?.duration || '3:00';
         const imageUrl = searchData?.thumbnail || searchData?.image || null;
 
-        // Real visual player image
-        await useRealPlayerImage(sock, msg, title, author, duration, 35);
+        // Si falla la imagen, igual se envia el audio
+        try {
+            const image = await buildPlayerImage({ title, author, durationText: String(duration), thumb: null });
+            await sock.sendMessage(msg.from, { image, caption: `${title}\n${author}` }, { quoted: msg });
+        } catch (e) {
+            console.error('[PLAY IMG]', e);
+            if (imageUrl) {
+                try {
+                    const img = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 15000 });
+                    await sock.sendMessage(msg.from, { image: Buffer.from(img.data), caption: `${title}\n${author}` }, { quoted: msg });
+                } catch {}
+            }
+        }
 
-        const audio = await axios.get(info.download, {
-            responseType: 'arraybuffer',
-            timeout: 120000
-        });
-
-        const fileName = `${cleanTitle(title)}.mp3`;
+        const audio = await axios.get(info.download, { responseType: 'arraybuffer', timeout: 120000 });
 
         await sock.sendMessage(
-            msg.from || msg.chat,
+            msg.from,
             {
                 audio: Buffer.from(audio.data),
                 mimetype: 'audio/mpeg',
-                fileName,
+                fileName: `${cleanTitle(title)}.mp3`,
                 ptt: false
             },
             { quoted: msg }
         );
-
-        playerCache.set(msg.from || msg.chat, { title, author, duration, imageUrl });
     } catch (error: any) {
         console.error('[PLAY]', error?.response?.data || error?.response?.status || error?.message || error);
         await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`);
