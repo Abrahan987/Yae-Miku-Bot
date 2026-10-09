@@ -41,19 +41,26 @@ const normalizeNumber = (x: string) => String(x || "").split("@")[0].split(":")[
 
 const stripMexOne = (num: string) => num.startsWith('521') ? '52' + num.slice(3) : num;
 
+function getBotNumbers(sock: any): Set<string> {
+    const set = new Set<string>();
+    
+    const id = normalizeNumber(sock.user?.id || '');
+    if (id) {
+        set.add(id);
+        set.add(stripMexOne(id));
+    }
+    
+    return set;
+}
+
 function isPrimaryBot(sock: any, primary: string): boolean {
     if (!primary) return true;
-
-    const botId = normalizeNumber(sock.user?.id || '');
-    const botLid = normalizeNumber(sock.user?.lid || '');
+    
+    const botNumbers = getBotNumbers(sock);
     const primaryNorm = normalizeNumber(primary);
-
-    const botIds = [botId, stripMexOne(botId), botLid, stripMexOne(botLid)]
-        .filter(Boolean);
-    const primaryIds = [primaryNorm, stripMexOne(primaryNorm)]
-        .filter(Boolean);
-
-    return botIds.some(id => primaryIds.includes(id));
+    const primaryStrip = stripMexOne(primaryNorm);
+    
+    return botNumbers.has(primaryNorm) || botNumbers.has(primaryStrip);
 }
 
 function getAdminSet(participants: any[]): Set<string> {
@@ -69,13 +76,6 @@ function getAdminSet(participants: any[]): Set<string> {
                 adminSet.add(stripMexOne(clean));
                 adminSet.add(p.id);
                 adminSet.add(decodeJid(p.id));
-            }
-            if (p.lid) {
-                const clean = normalizeNumber(p.lid);
-                adminSet.add(clean);
-                adminSet.add(stripMexOne(clean));
-                adminSet.add(p.lid);
-                adminSet.add(decodeJid(p.lid));
             }
             if (p.phoneNumber) {
                 const clean = normalizeNumber(p.phoneNumber);
@@ -148,8 +148,7 @@ export function handler(sock: WASocket) {
                     const msgId = rawMsg?.key?.id;
                     if (!msgId || !rawMsg.message) continue;
 
-                    const botKey = normalizeNumber(sock.user?.id || '');
-                    if (isDuplicate(`${botKey}:${msgId}`)) continue;
+                    if (isDuplicate(msgId)) continue;
 
                     const jid = rawMsg.key.remoteJid || '';
                     if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) continue;
@@ -227,13 +226,10 @@ export function handler(sock: WASocket) {
                                       adminSet.has(msgSender);
 
                             const rawBotJid = sock.user?.id || (sock.user as any)?.jid || '';
-                            const rawBotLid = (sock.user as any)?.lid || '';
 
                             const resolvedBotJid = UserJid(sock, msg.from, rawBotJid);
-                            const resolvedBotLid = rawBotLid ? UserJid(sock, msg.from, rawBotLid) : '';
 
                             const botBase = normalizeNumber(resolvedBotJid);
-                            const botLidBase = normalizeNumber(resolvedBotLid);
                             
                             const altBot = botBase.startsWith('521') 
                                 ? botBase.replace(/^521/, '52') 
@@ -243,12 +239,9 @@ export function handler(sock: WASocket) {
 
                             const botParticipant = participants.find((p: any) => {
                                 const pId = normalizeNumber(p.id);
-                                const pLid = p.lid ? normalizeNumber(p.lid) : '';
                                 return pId === botBase || 
                                        pId === altBot || 
-                                       pId === cleanBotMex || 
-                                       (botLidBase && pLid === botLidBase) ||
-                                       (pLid && pLid === botBase);
+                                       pId === cleanBotMex;
                             });
 
                             if (botParticipant) {
@@ -256,8 +249,7 @@ export function handler(sock: WASocket) {
                             } else {
                                 isBotAdmin = adminSet.has(botBase) || 
                                              adminSet.has(altBot) || 
-                                             adminSet.has(cleanBotMex) || 
-                                             (botLidBase ? adminSet.has(botLidBase) : false);
+                                             adminSet.has(cleanBotMex);
                             }
                         } catch (e) {
                             isBotAdmin = false;
