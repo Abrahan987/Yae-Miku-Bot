@@ -98,17 +98,13 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
 
         sock.ev.on('creds.update', saveCreds);
 
-        // Conectar el handler de comandos al socket del sub-bot
         try {
-            console.log(`[SUBBOT ${phone}] Conectando handler, comandos disponibles: ${commandMap.size}`);
             await handler(sock);
-            console.log(`[SUBBOT ${phone}] Handler conectado exitosamente`);
         } catch (e) {
             console.error(`[SUBBOT ${phone} HANDLER ERROR]`, e);
             mainSocket.sendMessage(mainChat, { text: `⚠️ Error al conectar handler del sub-bot: ${e}` }, { quoted: mainMsg }).catch(() => {});
         }
 
-        // Código de 8 dígitos
         if (isCode && !state.creds.registered && !pairingSent) {
             pairingSent = true;
             setTimeout(async () => {
@@ -148,7 +144,6 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
         sock.ev.on('connection.update', async (update: any) => {
             const { connection, lastDisconnect, qr } = update;
 
-            // QR
             if (qr && !isCode) {
                 try {
                     const buffer = await qrcode.toBuffer(qr, { scale: 8 });
@@ -199,7 +194,6 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
                     return;
                 }
 
-                // 515 = reinicio requerido tras vincular, y otras desconexiones: reconectar
                 const n = (retries.get(phone) || 0) + 1;
                 retries.set(phone, n);
                 if (n > 8) {
@@ -216,7 +210,6 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
     await connect();
 }
 
-// Reconecta los sub-bots guardados en /subs al iniciar el bot principal
 export async function restoreSubBots(mainSocket: any): Promise<void> {
     if (!fs.existsSync(subsDir)) return;
     for (const phone of fs.readdirSync(subsDir)) {
