@@ -1,10 +1,11 @@
 export const command = ['kickall', 'purgegroup', 'limpiargrupo'];
 export const category = 'admin';
-export const description = 'Expulsa a todos del grupo excepto al owner.';
-export const admin = true;
+export const description = 'Expulsa a todos del grupo excepto al owner. Solo owner del bot o creador del grupo.';
+export const admin = false;
 export const botAdmin = true;
 
-const normalize = (jid: string) => String(jid || '').split('@')[0].split(':')[0];
+const normalize = (jid: string) => String(jid || '').split('@')[0].split(':')[0].replace(/[^\d]/g, '');
+const strip = (n: string) => (n.startsWith('521') ? '52' + n.slice(3) : n);
 
 export default async function (sock: any, msg: any, extra: any) {
     if (!msg.isGroup) {
@@ -16,14 +17,68 @@ export default async function (sock: any, msg: any, extra: any) {
         sock.sendMessage(chatId, { react: { text, key: msg.key } }).catch(() => {});
 
     try {
-        await react('⏳');
-
         const metadata = await sock.groupMetadata(chatId);
         const participants = metadata?.participants || [];
 
+        const groupOwnerIds = new Set<string>();
+        const addOwner = (jid?: string) => {
+            const n = normalize(jid || '');
+            if (n) {
+                groupOwnerIds.add(n);
+                groupOwnerIds.add(strip(n));
+            }
+        };
+
+        addOwner(metadata?.owner);
+        addOwner((metadata as any)?.ownerPn);
+
+        for (const p of participants) {
+            if (p.admin === 'superadmin') {
+                addOwner(p.id);
+                addOwner(p.lid);
+                addOwner(p.phoneNumber);
+            }
+        }
+
+        const botOwner = normalize((global as any).owner);
+        const rawSender = msg.key?.participant || msg.sender;
+        const senderIds = [msg.sender, rawSender]
+            .map(normalize)
+            .filter(Boolean)
+            .flatMap((n: string) => [n, strip(n)]);
+
+        const senderParticipant = participants.find((p: any) =>
+            [p.id, p.lid, p.phoneNumber]
+                .map(normalize)
+                .filter(Boolean)
+                .some((id: string) => senderIds.includes(id) || senderIds.includes(strip(id)))
+        );
+        if (senderParticipant) {
+            [senderParticipant.id, senderParticipant.lid, senderParticipant.phoneNumber]
+                .map(normalize)
+                .filter(Boolean)
+                .forEach((n: string) => senderIds.push(n, strip(n)));
+        }
+
+        const esBotOwner = !!botOwner && senderIds.some((id: string) => id === botOwner || id === strip(botOwner));
+        const esDuenoGrupo = senderIds.some((id: string) => groupOwnerIds.has(id));
+
+        if (!esBotOwner && !esDuenoGrupo) {
+            await react('❌');
+            return msg.reply(
+                `⚠︎ 𝚂𝙾𝙻𝙾 𝙴𝙻 𝙾𝚆𝙽𝙴𝚁 𝙳𝙴𝙻 𝙱𝙾𝚃 𝙾 𝙴𝙻 𝙲𝚁𝙴𝙰𝙳𝙾𝚁 𝙳𝙴𝙻 𝙶𝚁𝚄𝙿𝙾 𝙿𝚄𝙴𝙳𝙴 𝚄𝚂𝙰𝚁 𝙴𝚂𝚃𝙴 𝙲𝙾𝙼𝙰𝙽𝙳𝙾.`
+            );
+        }
+
+        await react('⏳');
+
         const protectedIds = new Set<string>();
         const add = (jid?: string) => {
-            if (jid) protectedIds.add(normalize(jid));
+            const n = normalize(jid || '');
+            if (n) {
+                protectedIds.add(n);
+                protectedIds.add(strip(n));
+            }
         };
 
         add(metadata?.owner);
@@ -31,6 +86,7 @@ export default async function (sock: any, msg: any, extra: any) {
         add(sock.user?.id);
         add((sock.user as any)?.lid);
         add(msg.sender);
+        add((global as any).owner);
 
         for (const p of participants) {
             if (p.admin === 'superadmin') {
@@ -43,7 +99,7 @@ export default async function (sock: any, msg: any, extra: any) {
         const toRemove: string[] = participants
             .filter((p: any) => {
                 const ids = [p.id, p.lid, p.phoneNumber].filter(Boolean).map(normalize);
-                return !ids.some((id: string) => protectedIds.has(id));
+                return !ids.some((id: string) => protectedIds.has(id) || protectedIds.has(strip(id)));
             })
             .map((p: any) => p.id);
 
