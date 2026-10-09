@@ -3,9 +3,10 @@ import ytsearch from 'yt-search';
 
 export const command = ['play', 'mp3', 'ytmp3', 'ytaudio', 'playaudio'];
 export const category = 'descargas';
-export const description = 'Busca y descarga canciones de YouTube en formato MP3.';
+export const description = 'Busca y descarga canciones de YouTube en formato MP3 con visualización interactiva.';
 
 const processing = new Set<string>();
+const playerCache = new Map<string, any>();
 
 const cleanTitle = (title: string) => {
     return title
@@ -20,6 +21,61 @@ const formatNumber = (value: any) => {
     return value.toLocaleString('es-CO');
 };
 
+const formatSeconds = (seconds: number | string): string => {
+    if (typeof seconds === 'string') {
+        const parts = seconds.split(':');
+        if (parts.length >= 2) {
+            return seconds;
+        }
+        const secs = parseInt(seconds);
+        const min = Math.floor(secs / 60);
+        const sec = secs % 60;
+        return `${min}:${String(sec).padStart(2, '0')}`;
+    }
+    const min = Math.floor(seconds / 60);
+    const sec = seconds % 60;
+    return `${min}:${String(sec).padStart(2, '0')}`;
+};
+
+const makeProgressBar = (current: number, total: number): string => {
+    const dur = typeof total === 'string' 
+        ? parseInt(total.split(':')[0]) * 60 + parseInt(total.split(':')[1])
+        : total;
+    const cur = typeof current === 'string'
+        ? parseInt(current.split(':')[0]) * 60 + parseInt(current.split(':')[1])
+        : current;
+    
+    if (dur <= 0) return '░░░░░░░░░░░░░░░░░░░░';
+    
+    const ratio = Math.max(0, Math.min(1, cur / dur));
+    const filled = Math.round(ratio * 20);
+    return '█'.repeat(filled) + '░'.repeat(20 - filled);
+};
+
+const buildPlayerCard = (title: string, author: string, duration: string, currentTime: number = 0): string => {
+    const progress = makeProgressBar(currentTime, duration);
+    const elapsed = formatSeconds(currentTime);
+    
+    return (
+        `╔════════════════════════════════════════════╗\n` +
+        `║       🎵 PLAYING WITH MANCOS MUSIC 🎵    ║\n` +
+        `╚════════════════════════════════════════════╝\n\n` +
+        `┌────────────────────────────────────────────┐\n` +
+        `│                                            │\n` +
+        `│         ▄▀▄  ▀▄▄▀▀  ▄▀▀▀▀▄   ▀▄▄▀▀      │\n` +
+        `│        █   █  █     █     █   █         │\n` +
+        `│         ▀▄▀   █     █     █   █         │\n` +
+        `│                                            │\n` +
+        `└────────────────────────────────────────────┘\n\n` +
+        `🎤 *${author}*\n` +
+        `🎵 *${title}*\n\n` +
+        `[${progress}]\n` +
+        `${elapsed} / ${duration}\n\n` +
+        `⏮️  ⏪  ⏸️  ⏩  ⏭️  ↩️\n\n` +
+        `💚 #playing #youtube`
+    );
+};
+
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const text = extra.args.join(' ').trim();
 
@@ -27,7 +83,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         return msg.reply(
             `🍓 𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝙴𝙻 𝙽𝙾𝙼𝙱𝚁𝙴 𝙾 𝚄𝚁𝙻 𝙳𝙴 𝙻𝙰 𝙲𝙰𝙽𝙲𝙸Ó𝙽\n\n` +
             `𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
-            `> ${global.prefix[0]}play Oh Klahoma`
+            `> ${(global as any).prefix?.[0] || '.'}play Oh Klahoma`
         );
     }
 
@@ -115,20 +171,25 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             searchData?.image ||
             null;
 
-        const infoText =
-            `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
-            `${global.namebot}\n` +
-            `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙\n\n` +
-            `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴\n\n` +
-            `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
-            `🍥 𝙲𝙰𝙽𝙰𝙻 ── ${channel}\n` +
-            `🪷 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${formatNumber(views)}\n` +
-            `🍥 𝙻𝙸𝙺𝙴𝚂 ── ${formatNumber(likes)}\n` +
-            `🪷 𝙳𝚄𝚁𝙰𝙲𝙸Ó𝙽 ── ${duration}\n` +
-            `🍥 𝙵𝙾𝚁𝙼𝙰𝚃𝙾 ── MP3\n\n` +
-            `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...\n\n` +
-            `ꨄ︎ ${global.nmcreador}`;
+        // Crear card visual del reproductor
+        const playerCard = buildPlayerCard(title, author, duration, 0);
 
+        const chatId = msg.from || msg.chat;
+
+        // Guardar en cache
+        playerCache.set(chatId, {
+            title,
+            author,
+            channel,
+            duration,
+            views,
+            likes,
+            imageUrl,
+            downloadUrl: info.download,
+            timestamp: Date.now()
+        });
+
+        // Enviar card visual
         if (imageUrl) {
             try {
                 const image = await axios.get(imageUrl, {
@@ -137,22 +198,31 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                 });
 
                 await sock.sendMessage(
-                    msg.from,
+                    chatId,
                     {
                         image: Buffer.from(image.data),
-                        caption: infoText
+                        caption: playerCard
                     },
                     {
                         quoted: msg
                     }
                 );
             } catch {
-                await msg.reply(infoText);
+                await sock.sendMessage(
+                    chatId,
+                    { text: playerCard },
+                    { quoted: msg }
+                );
             }
         } else {
-            await msg.reply(infoText);
+            await sock.sendMessage(
+                chatId,
+                { text: playerCard },
+                { quoted: msg }
+            );
         }
 
+        // Descargar y enviar audio
         const audio = await axios.get(info.download, {
             responseType: 'arraybuffer',
             timeout: 120000
@@ -161,7 +231,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         const fileName = `${cleanTitle(title)}.mp3`;
 
         await sock.sendMessage(
-            msg.from,
+            chatId,
             {
                 audio: Buffer.from(audio.data),
                 mimetype: 'audio/mpeg',
@@ -172,6 +242,7 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
                 quoted: msg
             }
         );
+
     } catch (error: any) {
         console.error(
             '[PLAY]',
