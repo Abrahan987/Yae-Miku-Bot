@@ -9,6 +9,7 @@ import makeWASocket, {
     Browsers
 } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode';
+import { handler } from '#handler';
 
 const subsDir = path.join(process.cwd(), 'subs');
 if (!fs.existsSync(subsDir)) fs.mkdirSync(subsDir, { recursive: true });
@@ -95,6 +96,14 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
         });
 
         sock.ev.on('creds.update', saveCreds);
+
+        // IMPORTANTE: conectar el handler de comandos al socket del sub-bot
+        // (sin esto el sub-bot vincula pero nunca responde a nada)
+        try {
+            handler(sock);
+        } catch (e) {
+            console.error('[SUBBOT HANDLER ERROR]', e);
+        }
 
         // Código de 8 dígitos
         if (isCode && !state.creds.registered && !pairingSent) {
@@ -202,6 +211,28 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
     };
 
     await connect();
+}
+
+// Reconecta los sub-bots guardados en /subs al iniciar el bot principal
+export async function restoreSubBots(mainSocket: any): Promise<void> {
+    if (!fs.existsSync(subsDir)) return;
+    for (const phone of fs.readdirSync(subsDir)) {
+        const dir = path.join(subsDir, phone);
+        if (!fs.statSync(dir).isDirectory()) continue;
+        if (!fs.existsSync(path.join(dir, 'creds.json'))) continue;
+        if (activeBots.has(phone) || connecting.has(phone)) continue;
+        try {
+            await startSubBot({
+                phone,
+                isCode: false,
+                mainSocket,
+                mainChat: '',
+                mainMsg: undefined
+            });
+        } catch (e) {
+            console.error('[SUBBOT RESTORE]', phone, e);
+        }
+    }
 }
 
 export function getActiveBots(): Map<string, any> {
