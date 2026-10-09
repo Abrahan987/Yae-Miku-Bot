@@ -16,6 +16,8 @@ export default async function (sock: any, msg: any, extra: any) {
 VERSION:3.0
 FN:${ownerName}
 TEL:+${ownerNumber}
+ORG:${botName}
+NOTE:📌 Contacta para soporte, reportes o sugerencias.
 END:VCARD`;
 
         await sock.sendMessage(
@@ -29,21 +31,6 @@ END:VCARD`;
                         }
                     ]
                 }
-            },
-            { quoted: msg }
-        );
-
-        await sock.sendMessage(
-            chatId,
-            {
-                text:
-                    `🪷 *CREADOR DEL BOT*\n` +
-                    `─────── ❀ ───────\n\n` +
-                    `👤 *Nombre:* ${ownerName}\n` +
-                    `📱 *Número:* +${ownerNumber}\n` +
-                    `🤖 *Bot:* ${botName}\n\n` +
-                    `📌 Contacta al creador para soporte, reportes o sugerencias.\n` +
-                    `─────── ❀ ───────`
             },
             { quoted: msg }
         );
