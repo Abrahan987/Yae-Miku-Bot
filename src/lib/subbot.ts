@@ -99,8 +99,9 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
 
         // IMPORTANTE: conectar el handler de comandos al socket del sub-bot
         // (sin esto el sub-bot vincula pero nunca responde a nada)
+        // El handler usa los comandos compartidos cargados por el bot principal
         try {
-            handler(sock);
+            await handler(sock);
         } catch (e) {
             console.error('[SUBBOT HANDLER ERROR]', e);
         }
@@ -229,6 +230,7 @@ export async function restoreSubBots(mainSocket: any): Promise<void> {
                 mainChat: '',
                 mainMsg: undefined
             });
+            console.log(`[SUBBOT RESTORED] ${phone}`);
         } catch (e) {
             console.error('[SUBBOT RESTORE]', phone, e);
         }
