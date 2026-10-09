@@ -3,6 +3,7 @@ import type { WASocket } from '@whiskeysockets/baileys';
 import { serialize, UserJid, decodeJid } from '#simple';
 import { getUser, getGroup, updateUser, incrementCommandCount } from '#db';
 import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
+import { getPrimary } from './src/lib/primary.ts';
 import { LRUCache } from 'lru-cache';
 
 loadPlugins().catch(() => {});
@@ -23,8 +24,6 @@ export function invalidateGroupCache(chatId: string): void {
     if (chatId) groupMetaCache.delete(chatId);
 }
 
-// La clave incluye el id del socket (bot principal o sub-bot), así el mismo mensaje
-// puede ser procesado por cada bot que lo recibe sin que se marque como duplicado.
 function isDuplicate(key: string): boolean {
     if (processedIdsSet.has(key)) return true;
 
@@ -41,6 +40,17 @@ function isDuplicate(key: string): boolean {
 const normalizeNumber = (x: string) => String(x || "").split("@")[0].split(":")[0].replace(/[^\d]/g, "").trim();
 
 const stripMexOne = (num: string) => num.startsWith('521') ? '52' + num.slice(3) : num;
+
+function isPrimaryBot(sock: any, primary: string): boolean {
+    const mine = [
+        normalizeNumber(sock.user?.id || ''),
+        normalizeNumber(sock.user?.lid || '')
+    ]
+        .filter(Boolean)
+        .map(stripMexOne);
+
+    return mine.includes(stripMexOne(primary));
+}
 
 function getAdminSet(participants: any[]): Set<string> {
     const adminSet = new Set<string>();
@@ -153,6 +163,11 @@ export function handler(sock: WASocket) {
 
                     const runFn = commandMap.get(cleanCmd) || commandMap.get(`${usedPrefix}${cleanCmd}`);
                     if (!runFn) continue;
+
+                    if (msg.isGroup) {
+                        const primary = getPrimary(msg.from);
+                        if (primary && !isPrimaryBot(sock, primary)) continue;
+                    }
 
                     let startPos = usedPrefix.length;
                     while (startPos < text.length && text.charCodeAt(startPos) === 32) {
