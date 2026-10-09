@@ -1,22 +1,37 @@
-import { db } from '#db';
+import { db } from '../lib/database.ts';
 
-export const command = ['count', 'mensajes', 'messages', 'msgcount'];
-export const category = 'group';
-export const description = 'Obtener el conteo de mensajes de un usuario.';
+export const command = ['count', 'mensajes', 'msgcount'];
+export const category = 'admin';
+export const description = 'Muestra cuántos mensajes ha enviado un usuario.';
+export const admin = false;
+export const botAdmin = false;
 
 export default async function (sock: any, msg: any, extra: any) {
-    const who = msg.mentionedJid?.[0] || msg.quoted?.sender || msg.sender;
-    
+    if (!msg.isGroup) {
+        return msg.reply('🍓 Este comando solo funciona en grupos.');
+    }
+
+    const chatId = msg.from || msg.chat;
+    const who = (msg.mentionedJid || [])[0] || msg.quoted?.sender || msg.sender;
+
     try {
-        const stmt = db.prepare('SELECT message_count FROM message_stats WHERE groupJid = ? AND userJid = ?');
-        const result = stmt.get(msg.from, who) as any;
-        const count = result?.message_count || 0;
-        
-        let report = `❀ Contador de mensajes de @${who.split('@')[0]}\n`;
-        report += `> Total en este grupo: \`${count}\` mensajes\n`;
-        
-        await sock.sendMessage(msg.from, { text: report }, { quoted: msg, mentions: [who] });
-    } catch (e: any) {
-        return msg.reply(`Error: ${e.message}`);
+        const row = db
+            .prepare('SELECT message_count FROM message_stats WHERE groupJid = ? AND userJid = ?')
+            .get(chatId, who) as any;
+
+        return sock.sendMessage(
+            chatId,
+            {
+                text:
+                    `🪷 *CONTADOR DE MENSAJES*\n\n` +
+                    `🍓 @${who.split('@')[0]}\n` +
+                    `📌 Total: ${row?.message_count || 0} mensajes`,
+                mentions: [who]
+            },
+            { quoted: msg }
+        );
+    } catch (error: any) {
+        console.error('[COUNT ERROR]:', error);
+        return msg.reply('⚠️ Ocurrió un error al obtener los mensajes.');
     }
 }

@@ -1,25 +1,33 @@
-export const command = ['todos', 'invocar', 'tagall'];
-export const category = 'group';
-export const description = 'Enviar un mensaje mencionando a todos los usuarios del grupo.';
+export const command = ['tagall', 'todos', 'invocar'];
+export const category = 'admin';
+export const description = 'Menciona a todos los miembros del grupo.';
 export const admin = true;
+export const botAdmin = false;
 
 export default async function (sock: any, msg: any, extra: any) {
+    if (!msg.isGroup) {
+        return msg.reply('🍓 Este comando solo funciona en grupos.');
+    }
+
+    const chatId = msg.from || msg.chat;
+
     try {
-        const participants = extra.participants || [];
-        const memberJids = participants.map((p: any) => p.id).filter(Boolean);
-        const pesan = extra.args.join(' ') || 'Revivan 🪴';
-        
-        let text = `﹒⌗﹒🌱 .ৎ˚₊‧  ${pesan}\n\n𐚁 ֹ ִ \`GROUP TAG\` ! ୧ ֹ ִ🍃\n\n🍄 \`Miembros :\` ${participants.length}\n🌿 \`Solicitado por :\` @${msg.sender.split('@')[0]}\n\n`;
-        text += `╭┄ ꒰ \`Lista de usuarios:ׄ\` ꒱ ┄\n`;
-        
-        for (const jid of memberJids) {
-            text += `┊ꕥ @${jid.split('@')[0]}\n`;
+        const metadata = await sock.groupMetadata(chatId);
+        const participants: any[] = metadata?.participants || [];
+        const jids = participants.map((p: any) => p.id).filter(Boolean);
+        const pesan = (extra?.args || []).join(' ').trim() || 'Revivan 🪷';
+
+        let texto = `🪷 *INVOCACIÓN GENERAL*\n\n` +
+            `🍓 ${pesan}\n\n` +
+            `🍥 Miembros: ${jids.length}\n\n`;
+
+        for (const jid of jids) {
+            texto += `> @${jid.split('@')[0]}\n`;
         }
-        
-        text += `╰⸼ ┄ ┄ ꒰ \`@latest\` ꒱ ┄ ┄⸼`;
-        
-        await sock.sendMessage(msg.from, { text }, { quoted: msg, mentions: [msg.sender, ...memberJids] });
-    } catch (e: any) {
-        return msg.reply(`Error: ${e.message}`);
+
+        return sock.sendMessage(chatId, { text: texto, mentions: jids }, { quoted: msg });
+    } catch (error: any) {
+        console.error('[TAGALL ERROR]:', error);
+        return msg.reply('⚠️ Ocurrió un error al mencionar a todos.');
     }
 }

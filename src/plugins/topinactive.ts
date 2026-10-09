@@ -1,30 +1,39 @@
-import { db } from '#db';
+import { db } from '../lib/database.ts';
 
-export const command = ['topinactive', 'topinactivos', 'topinactiveusers'];
-export const category = 'group';
-export const description = 'Ver el top de usuarios más inactivos del grupo.';
+export const command = ['topinactive', 'topinactivos'];
+export const category = 'admin';
+export const description = 'Muestra el top de usuarios con menos mensajes.';
+export const admin = false;
+export const botAdmin = false;
 
 export default async function (sock: any, msg: any, extra: any) {
+    if (!msg.isGroup) {
+        return msg.reply('🍓 Este comando solo funciona en grupos.');
+    }
+
+    const chatId = msg.from || msg.chat;
+
     try {
-        const stmt = db.prepare('SELECT userJid, message_count FROM message_stats WHERE groupJid = ? ORDER BY message_count ASC LIMIT 10');
-        const inactiveUsers = stmt.all(msg.from) as any[];
-        
-        if (inactiveUsers.length === 0) {
-            return msg.reply(`「✎」 No hay datos registrados.`);
+        const rows = db
+            .prepare('SELECT userJid, message_count FROM message_stats WHERE groupJid = ? ORDER BY message_count ASC LIMIT 10')
+            .all(chatId) as any[];
+
+        if (!rows.length) {
+            return msg.reply('⚠️ Aún no hay actividad registrada en este grupo.');
         }
-        
-        let report = `❀ Top de usuarios inactivos ❀\n\n`;
-        const mentions = [];
-        
-        inactiveUsers.forEach((u: any, i: number) => {
-            const name = u.userJid.split('@')[0];
-            report += `*${i + 1}.* @${name}\n`;
-            report += `   » Mensajes: \`${u.message_count}\`\n`;
-            mentions.push(u.userJid);
+
+        let texto = `🪷 *TOP INACTIVOS*\n\n`;
+        rows.forEach((u: any, i: number) => {
+            texto += `🍓 ${i + 1}. @${u.userJid.split('@')[0]} » ${u.message_count}\n`;
         });
-        
-        await sock.sendMessage(msg.from, { text: report }, { quoted: msg, mentions });
-    } catch (e: any) {
-        return msg.reply(`Error: ${e.message}`);
+
+        return sock.sendMessage(
+            chatId,
+            { text: texto, mentions: rows.map((u: any) => u.userJid) },
+            { quoted: msg }
+        );
+    } catch (error: any) {
+        console.error('[TOPINACTIVE ERROR]:', error);
+        return msg.reply('⚠️ Ocurrió un error al obtener el top.');
     }
 }

@@ -1,27 +1,37 @@
-import { getTopActive } from '#db';
+import { getTopActive } from '../lib/database.ts';
 
-export const command = ['topcount', 'topmensajes', 'topmsgcount', 'topmessages'];
-export const category = 'group';
-export const description = 'Ver el top de usuarios con más mensajes en el grupo.';
+export const command = ['topcount', 'topmensajes', 'topmsgcount'];
+export const category = 'admin';
+export const description = 'Muestra el top de usuarios con más mensajes.';
+export const admin = false;
+export const botAdmin = false;
 
 export default async function (sock: any, msg: any, extra: any) {
+    if (!msg.isGroup) {
+        return msg.reply('🍓 Este comando solo funciona en grupos.');
+    }
+
+    const chatId = msg.from || msg.chat;
+
     try {
-        const topUsers = getTopActive(msg.from, 10);
-        
-        if (topUsers.length === 0) {
-            return msg.reply(`「✎」 No hay actividad registrada.`);
+        const top = getTopActive(chatId, 10);
+
+        if (!top.length) {
+            return msg.reply('⚠️ Aún no hay actividad registrada en este grupo.');
         }
-        
-        let report = `❀ Top de mensajes en el grupo\n\n`;
-        
-        topUsers.forEach((u: any, i: number) => {
-            const name = u.jid.split('@')[0];
-            report += `*${i + 1}.* @${name}\n`;
-            report += `   » Mensajes: \`${u.message_count}\`\n`;
+
+        let texto = `🪷 *TOP MENSAJES*\n\n`;
+        top.forEach((u: any, i: number) => {
+            texto += `🍓 ${i + 1}. @${u.jid.split('@')[0]} » ${u.message_count}\n`;
         });
-        
-        await msg.reply(report);
-    } catch (e: any) {
-        return msg.reply(`Error: ${e.message}`);
+
+        return sock.sendMessage(
+            chatId,
+            { text: texto, mentions: top.map((u: any) => u.jid) },
+            { quoted: msg }
+        );
+    } catch (error: any) {
+        console.error('[TOPCOUNT ERROR]:', error);
+        return msg.reply('⚠️ Ocurrió un error al obtener el top.');
     }
 }
