@@ -1,15 +1,36 @@
-import { UserJid, decodeJid } from '#simple';
-
-export const command = ['userinfo', 'info', 'datos'];
-export const category = 'utils';
-export const description = 'Muestra la información de WhatsApp de un usuario.';
-
 const num = (x: any): string =>
     String(x || '').split('@')[0].split(':')[0].replace(/[^\d]/g, '');
 
-export default async function (sock: any, msg: any, extra: any) {
-    let target = (msg.mentionedJid || [])[0] || msg.quoted?.sender || msg.sender;
+const normalizeJid = (value: any): string => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (raw.includes('@')) return raw;
+    return `${raw}@s.whatsapp.net`;
+};
 
+const detectLid = (msg: any, fallbackJid: string): string => {
+    const candidates = [
+        msg?.key?.participant,
+        msg?.participant,
+        msg?.quoted?.key?.participant,
+        msg?.quoted?.participant,
+        msg?.sender,
+        fallbackJid
+    ];
+
+    const lid = candidates
+        .map((v) => String(v || '').trim())
+        .find((v) => !!v && v.includes('@lid'));
+
+    return lid || 'No disponible';
+};
+
+export const command = ['userinfo', 'info', 'datos'];
+export const category = 'utils';
+export const description = 'Muestra información de WhatsApp de un usuario (JID, LID, número, foto y estado).';
+
+export default async function (sock: any, msg: any) {
+    const target = (msg.mentionedJid || [])[0] || msg.quoted?.sender || msg.sender;
     if (!target) {
         return msg.reply(
             `🍓 *USERINFO*\n\n` +
@@ -21,67 +42,58 @@ export default async function (sock: any, msg: any, extra: any) {
     }
 
     try {
-        const rawJid = String(target);
-        const decodedJid = decodeJid(rawJid);
-        const number = num(decodedJid);
-        const isSelf = target === msg.sender;
+        const rawJid = normalizeJid(target);
+        const number = num(rawJid);
+        const lid = detectLid(msg, rawJid);
 
-        // Intenta obtener el perfil del usuario
-        let profilePicUrl = '';
-        let profileName = '';
+        let profileUrl = '';
         try {
-            const profilePic = await sock.profilePictureUrl(rawJid, 'image');
-            profilePicUrl = profilePic || '';
-        } catch (e) {
-            profilePicUrl = '(Sin foto de perfil)';
+            profileUrl = await sock.profilePictureUrl(rawJid, 'image');
+        } catch {
+            profileUrl = '';
         }
 
+        let statusText = 'Sin estado';
         try {
-            const profile = await sock.fetchStatus(rawJid);
-            profileName = profile?.status || '(Sin estado)';
-        } catch (e) {
-            profileName = '(No disponible)';
+            const status = await sock.fetchStatus(rawJid);
+            statusText = status?.status || 'Sin estado';
+        } catch {
+            statusText = 'Sin estado';
         }
 
-        // Construir la respuesta
-        const info = [
+        const displayName = (await sock.getName(rawJid).catch(() => '')) || msg.pushName || 'Desconocido';
+
+        const lines = [
             `${(global as any).namebot}`,
             '',
-            `🔍 *INFORMACIÓN DEL USUARIO*`,
+            '🔍 *INFORMACIÓN DE WHATSAPP*',
             '',
-            `📱 *Número:* +${number}`,
-            `🆔 *JID:* ${decodedJid}`,
-            `🪪 *LID:* ${rawJid.includes(':') ? rawJid.split(':')[0] : '(No disponible)'}`,
-            `👤 *Nombre:* ${msg.pushName || isSelf ? (global as any).namebot : '(Desconocido)'}`,
-            `📝 *Estado:* ${profileName}`,
-            `🤳 *Foto:* ${profilePicUrl === '(Sin foto de perfil)' ? profilePicUrl : '✅ Disponible'}`,
-            `💬 *Es chat:* ${isSelf ? 'Tú mismo' : 'Otro usuario'}`,
-            `🔐 *Verificado:* ${rawJid.includes('@s.whatsapp.net') ? '✅ Sí' : '⚠️ Posible bot/sistema'}`,
+            `📱 *Número:* ${number || 'No disponible'}`,
+            `🆔 *JID:* ${rawJid || 'No disponible'}`,
+            `🔐 *LID:* ${lid}`,
+            `👤 *Nombre:* ${displayName}`,
+            `📝 *Estado:* ${statusText}`,
+            `📸 *Foto de perfil:* ${profileUrl ? 'Disponible' : 'Sin foto'}`,
             '',
             `ꨄ︎ ${(global as any).nmcreador}`
-        ];
+        ].join('\n');
 
-        // Si hay foto de perfil, enviar con imagen
-        if (profilePicUrl && profilePicUrl !== '(Sin foto de perfil)') {
-            try {
-                return sock.sendMessage(
-                    msg.from,
-                    {
-                        image: { url: profilePicUrl },
-                        caption: info.join('\n'),
-                        mentions: [rawJid]
-                    },
-                    { quoted: msg }
-                );
-            } catch (e) {
-                console.error('[USERINFO IMAGE]:', e);
-            }
+        if (profileUrl) {
+            return sock.sendMessage(
+                msg.from,
+                {
+                    image: { url: profileUrl },
+                    caption: lines,
+                    mentions: [rawJid]
+                },
+                { quoted: msg }
+            );
         }
 
         return sock.sendMessage(
             msg.from,
             {
-                text: info.join('\n'),
+                text: lines,
                 mentions: [rawJid]
             },
             { quoted: msg }
@@ -89,7 +101,7 @@ export default async function (sock: any, msg: any, extra: any) {
     } catch (error: any) {
         console.error('[USERINFO ERROR]:', error);
         return msg.reply(
-            `🍥 Ocurrió un error al obtener la información.\n\n` +
+            `🍥 Ocurrió un error al obtener la información del usuario.\n\n` +
             `📌 ${error?.message || String(error)}`
         );
     }
