@@ -3,6 +3,9 @@ import axios from 'axios';
 const API_KEY = 'proyectsV2';
 const BASE_URL = 'https://api.stellarwa.xyz/sfw/interaction';
 
+const symbols = ['(⁠◠⁠‿⁠◕⁠)', '˃͈◡˂͈', '૮(˶ᵔᵕᵔ˶)ა', '(づ｡◕‿‿◕｡)づ', '(✿◡‿◡)', '(꒪⌓꒪)', '(✿✪‿✪｡)', '(*≧ω≦)', '(✧ω◕)'];
+function getRandomSymbol() { return symbols[Math.floor(Math.random() * symbols.length)]; }
+
 const captions: Record<string, (from: string, to: string) => string> = {
   kiss: (from, to) => from === to ? 'se manda un beso al aire.' : `le da un beso a`,
   hug: (from, to) => from === to ? 'se abraza a sí mismo.' : `abraza a`,
@@ -165,10 +168,10 @@ export default async function (sock: any, msg: any, extra: any) {
       return msg.reply(`⚠️ La API devolvió un archivo vacío para *${currentCommand}*.`);
     }
 
-     const caption = targetJid
-      ? `🌸 *${senderName}* ${descripcion} *@${targetName}*`
-      : `🌸 *${senderName}* ${descripcion}`;
-
+    const symbol = getRandomSymbol();
+    const caption = targetJid
+      ? `${symbol} *${senderName}* ${descripcion} *@${targetName}*`
+      : `${symbol} *${senderName}* ${descripcion}`;
 
     return await sock.sendMessage(
       msg.chat,
