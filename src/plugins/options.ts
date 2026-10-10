@@ -1,6 +1,6 @@
 import { getGroup } from '#db';
 
-export const command = ['welcome', 'bienvenida', 'goodbye', 'despedida', 'alerts', 'alertas', 'nsfw', 'antilink', 'antienlaces', 'antilinks', 'antistatus', 'antiestados', 'rpg', 'economy', 'economia', 'gacha'];
+export const command = ['welcome', 'bienvenida', 'goodbye', 'despedida', 'alerts', 'alertas', 'nsfw', 'antistatus', 'antiestados', 'rpg', 'economy', 'economia', 'gacha'];
 export const category = 'group';
 export const description = 'Configurar opciones del grupo.';
 export const admin = true;
@@ -11,9 +11,6 @@ export default async function (sock: any, msg: any, extra: any) {
     const validStates = ['on', 'off', 'enable', 'disable'];
     
     const mapTerms: {[key: string]: string} = {
-        antilinks: 'antilinks',
-        antienlaces: 'antilinks',
-        antilink: 'antilinks',
         antistatus: 'antistatus',
         antiestados: 'antistatus',
         welcome: 'welcome',
@@ -32,7 +29,6 @@ export default async function (sock: any, msg: any, extra: any) {
     };
     
     const featureNames: {[key: string]: string} = {
-        antilinks: 'el *AntiEnlace*',
         antistatus: 'el *AntiEstado*',
         welcome: 'el mensaje de *Bienvenida*',
         goodbye: 'el mensaje de *Despedida*',

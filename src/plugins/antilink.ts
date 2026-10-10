@@ -1,8 +1,8 @@
 import { isAntilinkEnabled, setAntilink } from '../lib/antilink.ts';
 
-export const command = ['antilink', 'antienlace'];
+export const command = ['antilink', 'antienlace', 'antienlaces', 'antilinks'];
 export const category = 'admin';
-export const description = 'Activa o desactiva el antilink: elimina los mensajes con links de los miembros.';
+export const description = 'Activa o desactiva el antilink: borra links y expulsa si es link de WhatsApp.';
 export const admin = true;
 export const botAdmin = true;
 
@@ -16,13 +16,17 @@ export default async function (sock: any, msg: any, extra: any) {
     const arg = ((extra?.args || [])[0] || '').toLowerCase();
     const actual = isAntilinkEnabled(chatId);
 
-    if (arg === 'on' || arg === 'activar') {
+    if (arg === 'on' || arg === 'enable' || arg === 'activar') {
         if (actual) return msg.reply('⚠️ El antilink ya estaba *activado*.');
         setAntilink(chatId, true);
-        return msg.reply('✅ *ANTILINK ACTIVADO*\n\n🪷 Los mensajes con links de los miembros serán eliminados.');
+        return msg.reply(
+            '✅ *ANTILINK ACTIVADO*\n\n' +
+            '🪷 Links normales: se elimina el mensaje.\n' +
+            '🍓 Links de WhatsApp: se elimina el mensaje y se expulsa al usuario.'
+        );
     }
 
-    if (arg === 'off' || arg === 'desactivar') {
+    if (arg === 'off' || arg === 'disable' || arg === 'desactivar') {
         if (!actual) return msg.reply('⚠️ El antilink ya estaba *desactivado*.');
         setAntilink(chatId, false);
         return msg.reply('✅ *ANTILINK DESACTIVADO*');

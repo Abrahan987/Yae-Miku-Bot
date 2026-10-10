@@ -36,6 +36,12 @@ const LINK_REGEX = new RegExp(
     'i'
 );
 
+const WHATSAPP_LINK_REGEX = /(?:chat\.|api\.)?whatsapp\.com\/\S*|wa\.me\/\S*/i;
+
 export function containsLink(text: string): boolean {
     return LINK_REGEX.test(String(text || ''));
+}
+
+export function containsWhatsappLink(text: string): boolean {
+    return WHATSAPP_LINK_REGEX.test(String(text || ''));
 }
