@@ -1,3 +1,5 @@
+import { resolveTarget, isAdminP, num } from '../lib/participants.ts';
+
 export const command = ['promote', 'promover'];
 export const category = 'admin';
 export const description = 'Da administrador a un miembro del grupo.';
@@ -10,28 +12,23 @@ export default async function (sock: any, msg: any, extra: any) {
     }
 
     const chatId = msg.from || msg.chat;
-    const targetJid = (msg.mentionedJid || [])[0] || msg.quoted?.sender;
-
-    if (!targetJid) {
-        return msg.reply(
-            `🍓 Uso\n\n` +
-            `> ${(global as any).prefix?.[0] || '.'}promote @usuario\n` +
-            `> O responde a su mensaje`
-        );
-    }
 
     try {
-        const metadata = await sock.groupMetadata(chatId);
-        const base = targetJid.split('@')[0];
-        const target = (metadata?.participants || []).find(
-            (p: any) => p.id?.split('@')[0] === base || p.lid?.split('@')[0] === base
-        );
+        const { raw, target } = await resolveTarget(sock, msg, chatId);
+
+        if (!raw) {
+            return msg.reply(
+                `🍓 Uso\n\n` +
+                `> ${(global as any).prefix?.[0] || '.'}promote @usuario\n` +
+                `> O responde a su mensaje`
+            );
+        }
 
         if (!target) {
             return msg.reply('⚠️ Este usuario no está en el grupo.');
         }
 
-        if (target.admin) {
+        if (isAdminP(target)) {
             return msg.reply('⚠️ Este usuario ya es administrador.');
         }
 
@@ -42,7 +39,7 @@ export default async function (sock: any, msg: any, extra: any) {
             {
                 text:
                     `✅ *NUEVO ADMINISTRADOR*\n\n` +
-                    `🪷 @${base} ahora es administrador del grupo.`,
+                    `🪷 @${num(target.id)} ahora es administrador del grupo.`,
                 mentions: [target.id]
             },
             { quoted: msg }
