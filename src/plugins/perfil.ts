@@ -1,8 +1,9 @@
 import { db, getUser, updateUser, getWarnings } from '../lib/database.ts';
+import { getPartner, getMarriageDate, toJid } from '../lib/marry.ts';
 
 export const command = ['perfil', 'profile',];
 export const category = 'economia';
-export const description = 'Muestra tu perfil: nombre, foto y dinero.';
+export const description = 'Muestra tu perfil: nombre, foto, dinero y pareja.';
 export const admin = false;
 export const botAdmin = false;
 
@@ -39,12 +40,27 @@ export default async function (sock: any, msg: any, extra: any) {
             warns = getWarnings(chatId, target);
         }
 
+        const mentions: string[] = [target];
+
         let caption =
             `🍓͜ᩧ𑂳ᰍ  PERFIL\n\n` +
             `🪷 Nombre: *${name}*\n` +
             `📱 Número: @${number}\n` +
             `💰 Dinero: *¥${yen.toLocaleString()}*\n` +
             `🏆 Ranking: *#${rankRow?.pos ?? 1}* de ${totalRow?.total ?? 1}`;
+
+        // Pareja (si está casado)
+        const partner = getPartner(target);
+        if (partner) {
+            const partnerJid = toJid(partner);
+            mentions.push(partnerJid);
+            const since = getMarriageDate(target);
+            const days = since ? Math.max(0, Math.floor((Date.now() - since) / 86400000)) : 0;
+            caption += `\n💍 Pareja: @${partner}`;
+            caption += `\n💖 Casados hace: *${days} día${days === 1 ? '' : 's'}*`;
+        } else {
+            caption += `\n💍 Pareja: *Soltero/a*`;
+        }
 
         if (msg.isGroup) {
             caption += `\n💬 Mensajes (grupo): *${messages.toLocaleString()}*`;
@@ -61,18 +77,18 @@ export default async function (sock: any, msg: any, extra: any) {
         if (pp) {
             return sock.sendMessage(
                 chatId,
-                { image: { url: pp }, caption, mentions: [target] },
+                { image: { url: pp }, caption, mentions },
                 { quoted: msg }
             );
         }
 
         return sock.sendMessage(
             chatId,
-            { text: caption, mentions: [target] },
+            { text: caption, mentions },
             { quoted: msg }
         );
     } catch (error: any) {
         console.error('[PERFIL ERROR]:', error);
-        return msg.reply('⚠︎ Ocurrió un error al obtener el perfil.');
+        return msg.reply('⚠️ Ocurrió un error al obtener el perfil.');
     }
 }
