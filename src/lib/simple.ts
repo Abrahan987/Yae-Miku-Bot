@@ -110,6 +110,27 @@ export const UserJid = (sock: any, chat?: string, jid?: string): string => {
     return cleanJid;
 };
 
+// Descarga el contenido multimedia de un mensaje (propio o citado)
+async function downloadMedia(media: any, msgType: string): Promise<Buffer | null> {
+    if (!media || !msgType) return null;
+
+    try {
+        const stream = await downloadContentFromMessage(
+            media as any,
+            msgType.replace('Message', '') as any
+        );
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream) {
+            chunks.push(chunk);
+        }
+        return Buffer.concat(chunks);
+    } catch (downloadError) {
+        console.error('[SERIALIZE ERROR]:', downloadError);
+        return null;
+    }
+}
+
 function processQuotedMessage(sock: any, chatJid: string, contextInfo: any): any {
     if (!contextInfo?.quotedMessage) return null;
 
@@ -140,7 +161,8 @@ function processQuotedMessage(sock: any, chatJid: string, contextInfo: any): any
             },
             sender: resolvedParticipant,
             body: quotedBody,
-            mentionedJid: contextInfo.mentionedJid || []
+            mentionedJid: contextInfo.mentionedJid || [],
+            download: (): Promise<Buffer | null> => downloadMedia(quotedMsg, quotedType || '')
         };
     } catch (error) {
         console.error('[SERIALIZE ERROR]:', error);
@@ -199,26 +221,7 @@ export function serialize(sock: any, m: proto.IWebMessageInfo): any {
                 }
                 return sock.sendMessage(chat, { text }, { quoted: m });
             },
-            download: async (): Promise<Buffer | null> => {
-                const media = msg;
-                if (!media) return null;
-
-                try {
-                    const stream = await downloadContentFromMessage(
-                        media as any,
-                        msgType.replace('Message', '') as any
-                    );
-
-                    const chunks: Buffer[] = [];
-                    for await (const chunk of stream) {
-                        chunks.push(chunk);
-                    }
-                    return Buffer.concat(chunks);
-                } catch (downloadError) {
-                    console.error('[SERIALIZE ERROR]:', downloadError);
-                    return null;
-                }
-            }
+            download: (): Promise<Buffer | null> => downloadMedia(msg, msgType)
         };
 
         messageCache.set(m, result);
