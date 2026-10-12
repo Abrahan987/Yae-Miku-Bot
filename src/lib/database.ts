@@ -1,4 +1,3 @@
-
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 
@@ -20,6 +19,12 @@ export async function loadDB() {
             jid TEXT PRIMARY KEY,
             welcome INTEGER DEFAULT 0,
             mute INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS welcomes (
+            groupJid TEXT PRIMARY KEY,
+            enabled INTEGER DEFAULT 0,
+            message TEXT DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS bot_stats (
@@ -289,7 +294,6 @@ export function resetWarnings(
     return 0;
 }
 
-// ECONOMIA - Cooldowns
 export function getCooldown(userJid: string, action: string): number {
     const row = db
         .prepare('SELECT until_time FROM economy_cooldowns WHERE userJid = ? AND action = ?')
