@@ -1,7 +1,7 @@
 import './config.ts';
 import type { WASocket } from '@whiskeysockets/baileys';
 import { serialize, UserJid, decodeJid } from '#simple';
-import { getUser, getGroup, updateUser, incrementCommandCount } from '#db';
+import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageCount } from '#db';
 import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
 import { isAntilinkEnabled, containsLink, containsWhatsappLink } from './src/lib/antilink.ts';
@@ -27,6 +27,22 @@ function isDuplicate(key: string): boolean {
         if (oldest) processedIdsSet.delete(oldest);
     }
     return false;
+}
+
+const countedIds = new Set<string>();
+const countedQueue: string[] = [];
+
+function countMessage(chatId: string, userJid: string, msgId: string): void {
+    if (!chatId || !userJid || !msgId) return;
+    const key = `${chatId}:${msgId}`;
+    if (countedIds.has(key)) return;
+    countedIds.add(key);
+    countedQueue.push(key);
+    if (countedQueue.length > DUP_LIMIT) {
+        const oldest = countedQueue.shift();
+        if (oldest) countedIds.delete(oldest);
+    }
+    try { incrementMessageCount(chatId, userJid); } catch {}
 }
 
 const normalizeNumber = (x: string) => String(x || '').split('@')[0].split(':')[0].replace(/[^\d]/g, '').trim();
@@ -187,6 +203,7 @@ export function handler(sock: WASocket) {
                 if (isDuplicate(`${normalizeNumber(sock.user?.id || '')}:${msgId}`)) continue;
 
                 const msg = serialize(sock, rawMsg);
+                if (msg?.isGroup && !rawMsg.key.fromMe) countMessage(msg.from, msg.sender, msgId);
                 if (!msg?.body) continue;
                 const text = msg.body.trim();
                 if (!text) continue;
