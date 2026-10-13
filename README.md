@@ -153,18 +153,6 @@ global.prefix = ['.', '#'];
 
 ---
 
-## 🎀 Funciones futuras posibles
-
-Este bot tiene mucho potencial para crecer. Algunas ideas que puedes añadir:
-
-- Moderación de grupos
-- Bienvenida y despedida
-- Comandos de música
-- Descargas de contenido
-- Trivia / juegos
-- Sistema de niveles
-- Integración con APIs externas
-- Respuestas automáticas inteligentes
 
 ---
 
