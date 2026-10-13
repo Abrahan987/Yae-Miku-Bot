@@ -1,3 +1,5 @@
+import { setWelcomeMessage } from '../lib/welcome.ts';
+
 export const command = ['setgoodbye'];
 export const category = 'group';
 export const description = 'Establecer un mensaje de despedida personalizado.';
@@ -21,10 +23,12 @@ export default async function (sock: any, msg: any, extra: any) {
     }
     
     if (extra.args[0] === 'clear') {
+        setWelcomeMessage(msg.from, 'goodbye', '');
         msg.reply('✐ Mensaje de despedida eliminado.');
         return;
     }
     
-    const texto = extra.args.join(' ');
+    const texto = extra.text.slice(extra.text.toLowerCase().indexOf(extra.command) + extra.command.length).trim();
+    setWelcomeMessage(msg.from, 'goodbye', texto);
     msg.reply(`ꕥ Has establecido el mensaje de despedida correctamente.`);
 }
