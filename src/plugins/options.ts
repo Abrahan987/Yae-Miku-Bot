@@ -1,4 +1,6 @@
+
 import { getGroup } from '#db';
+import { setWelcomeEnabled } from '../lib/welcome.ts';
 
 export const command = ['welcome', 'bienvenida', 'goodbye', 'despedida', 'alerts', 'alertas', 'nsfw', 'antistatus', 'antiestados', 'rpg', 'economy', 'economia', 'gacha'];
 export const category = 'group';
@@ -51,5 +53,10 @@ export default async function (sock: any, msg: any, extra: any) {
     }
     
     const enabled = ['on', 'enable'].includes(stateArg);
+
+    if (normalizedKey === 'welcome' || normalizedKey === 'goodbye') {
+        setWelcomeEnabled(msg.from, normalizedKey, enabled);
+    }
+
     msg.reply(`✎ Has *${enabled ? 'activado' : 'desactivado'}* ${nombreBonito}.`);
 }
