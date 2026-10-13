@@ -2,7 +2,7 @@ import { startSubBot, listActiveBots, normalizePhone } from '../lib/subbot.ts';
 
 export const command = ['qr', 'code'];
 export const category = 'socket';
-export const description = 'Vincula un sub-bot con QR o código (usa tu mismo número).';
+export const description = 'Vincula un sub-bot con QR o código. Si no detecta tu número: .code +número';
 export const admin = false;
 export const botAdmin = false;
 
@@ -22,6 +22,20 @@ export default async function (sock: any, msg: any, extra: any) {
     const esCode = extra.command === 'code';
 
     try {
+        // Número escrito manualmente: .code +595 981 123456
+        const argsTexto: string = Array.isArray(extra.args)
+            ? extra.args.join('')
+            : String(extra.args || '');
+        const digitosManual = argsTexto.replace(/\D/g, '');
+        const tieneManual = digitosManual.length > 0;
+
+        if (tieneManual && (digitosManual.length < 8 || digitosManual.length > 15)) {
+            return msg.reply(
+                '⚠️ El número no es válido.\n\n' +
+                'Ejemplo: *.code +595981123456*'
+            );
+        }
+
         const ahora = Date.now();
         const ultimo = tiempos.get(sender) || 0;
         if (ahora - ultimo < ESPERA_MS) {
@@ -35,12 +49,24 @@ export default async function (sock: any, msg: any, extra: any) {
             return msg.reply('❌ No hay espacios disponibles. El bot tiene demasiados sub-bots activos.');
         }
 
-        if (sender.endsWith('@lid')) {
-            return msg.reply('⚠️ No pude obtener tu número. Intenta de nuevo en unos segundos.');
+        // Resolver el número: manual > detectado del sender
+        let numero: string | null = null;
+
+        if (tieneManual) {
+            numero = normalizePhone(digitosManual);
+        } else if (!sender.endsWith('@lid')) {
+            numero = normalizePhone(sender.split('@')[0]);
         }
 
-        const numero = normalizePhone(sender.split('@')[0]);
-        if (!numero) return msg.reply('⚠️ No pude obtener tu número.');
+        if (!numero) {
+            return msg.reply(
+                '⚠️ *No pude obtener tu número*\n\n' +
+                'Tu cuenta usa nombre de usuario de WhatsApp, así que no puedo ver tu número.\n\n' +
+                '🪷 Escribe tu número manualmente:\n' +
+                '*.code +595981123456*\n\n' +
+                '_(con código de país, sin espacios)_'
+            );
+        }
 
         tiempos.set(sender, ahora);
 
