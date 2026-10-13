@@ -5,6 +5,7 @@ import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageC
 import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
 import { isAntilinkEnabled, containsLink, containsWhatsappLink } from './src/lib/antilink.ts';
+import { getWelcomeConfig, type WelcomeKind } from './src/lib/welcome.ts';
 import { LRUCache } from 'lru-cache';
 
 loadPlugins().catch(() => {});
@@ -16,7 +17,12 @@ const processedIdsSet = new Set<string>();
 const processedIdsQueue: string[] = [];
 const groupMetaCache = new LRUCache<string, { metadata: any; ts: number }>({ max: 500, ttl: metaTtlMs });
 
-export function invalidateGroupCache(chatId: string): void { if (chatId) groupMetaCache.delete(chatId); }
+export function invalidateGroupCache(chatId: string): void {
+    if (!chatId) return;
+    for (const key of Array.from(groupMetaCache.keys())) {
+        if (key.endsWith(`:${chatId}`)) groupMetaCache.delete(key);
+    }
+}
 
 function isDuplicate(key: string): boolean {
     if (processedIdsSet.has(key)) return true;
@@ -48,6 +54,24 @@ function countMessage(chatId: string, userJid: string, msgId: string): void {
 const normalizeNumber = (x: string) => String(x || '').split('@')[0].split(':')[0].replace(/[^\d]/g, '').trim();
 const stripMexOne = (num: string) => num.startsWith('521') ? '52' + num.slice(3) : num;
 const yae = (title: string, body: string) => `${(global as any).namebot}\n\n🍓͜ᩧ𑂳ᰍ  ${title}\n\n🪷 ${body}\n\nꨄ︎ ${(global as any).nmcreador}`;
+
+const recentEvents = new Map<string, number>();
+
+function isRecentEvent(key: string, windowMs = 15000): boolean {
+    const now = Date.now();
+    for (const [k, ts] of recentEvents) {
+        if (now - ts > windowMs) recentEvents.delete(k);
+    }
+    if (recentEvents.has(key)) return true;
+    recentEvents.set(key, now);
+    return false;
+}
+
+function defaultTemplate(kind: WelcomeKind): string {
+    return kind === 'welcome'
+        ? yae('𝙱𝙸𝙴𝙽𝚅𝙴𝙽𝙸𝙳𝙾', 'Hola @user, bienvenido/a a *@group*\n\n📌 Ahora somos *@members* miembros.')
+        : yae('𝙳𝙴𝚂𝙿𝙴𝙳𝙸𝙳𝙰', '@user salió de *@group*\n\n📌 Quedamos *@members* miembros.');
+}
 
 function isPrimaryBot(sock: any, primary: string): boolean {
     if (!primary) return true;
@@ -189,6 +213,66 @@ function isConfiguredOwner(sender: string): boolean {
 }
 
 export function handler(sock: WASocket) {
+    sock.ev.on('group-participants.update', async (update: any) => {
+        try {
+            const chatId: string = update?.id || '';
+            const action: string = update?.action || '';
+            if (!chatId.endsWith('@g.us')) return;
+
+            invalidateGroupCache(chatId);
+            if (action !== 'add' && action !== 'remove') return;
+
+            const primary = getPrimary(chatId);
+            if (primary && !isPrimaryBot(sock, primary)) return;
+
+            const kind: WelcomeKind = action === 'add' ? 'welcome' : 'goodbye';
+            const config = getWelcomeConfig(chatId, kind);
+            if (!config.enabled) return;
+
+            const ids: string[] = (update.participants || [])
+                .map((p: any) => (typeof p === 'string' ? p : p?.id || ''))
+                .filter(Boolean);
+            if (!ids.length) return;
+
+            const botNums = [sock.user?.id || '', (sock.user as any)?.lid || '']
+                .map(normalizeNumber)
+                .filter(Boolean);
+
+            let subject = 'el grupo';
+            let members = 0;
+            try {
+                const metadata = await sock.groupMetadata(chatId);
+                subject = metadata?.subject || subject;
+                members = metadata?.participants?.length || 0;
+            } catch {}
+
+            const template = config.message || defaultTemplate(kind);
+
+            for (const id of ids) {
+                const number = normalizeNumber(id);
+                if (!number || botNums.includes(number)) continue;
+                if (isRecentEvent(`${chatId}:${action}:${number}`)) continue;
+
+                const values: Record<string, string> = {
+                    user: `@${number}`,
+                    group: subject,
+                    members: String(members)
+                };
+                const text = template.replace(/@(user|group|members)/gi, (_m: string, k: string) => values[k.toLowerCase()]);
+
+                try {
+                    await sock.sendMessage(chatId, { text, mentions: [id] });
+                } catch (e) {
+                    console.error('[WELCOME SEND]:', e);
+                }
+
+                if (ids.length > 1) await new Promise((r) => setTimeout(r, 600));
+            }
+        } catch (e) {
+            console.error('[GROUP PARTICIPANTS ERROR]:', e);
+        }
+    });
+
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify' || !Array.isArray(messages)) return;
         for (const rawMsg of messages) {
