@@ -300,6 +300,12 @@ export function handler(sock: WASocket) {
                 const runFn: any = commandMap.get(cleanCmd) || commandMap.get(`${usedPrefix}${cleanCmd}`);
                 if (!runFn) continue;
 
+                if (msg.isGroup && cleanCmd !== 'bot') {
+                    let muted = false;
+                    try { muted = Number(getGroup(msg.from).mute) === 1; } catch {}
+                    if (muted) continue;
+                }
+
                 let start = usedPrefix.length;
                 while (start < text.length && text.charCodeAt(start) === 32) start++;
                 const first = text.indexOf(' ', start);
@@ -377,4 +383,5 @@ export function handler(sock: WASocket) {
             }
         }
     });
-}
+        }
+        
