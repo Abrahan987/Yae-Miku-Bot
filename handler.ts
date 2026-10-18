@@ -6,6 +6,7 @@ import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
 import { isAntilinkEnabled, containsLink, containsWhatsappLink } from './src/lib/antilink.ts';
 import { getWelcomeConfig, type WelcomeKind } from './src/lib/welcome.ts';
+import { handleGachaAccept, touchUser } from './src/lib/gacha.ts';
 import { LRUCache } from 'lru-cache';
 
 loadPlugins().catch(() => {});
@@ -42,6 +43,7 @@ function countMessage(chatId: string, userJid: string, msgId: string): void {
     if (!chatId || !userJid || !msgId) return;
     const key = `${chatId}:${msgId}`;
     if (countedIds.has(key)) return;
+    touchUser(chatId, userJid);
     countedIds.add(key);
     countedQueue.push(key);
     if (countedQueue.length > DUP_LIMIT) {
@@ -292,6 +294,14 @@ export function handler(sock: WASocket) {
                 const text = msg.body.trim();
                 if (!text) continue;
 
+                if (msg.isGroup && text.toLowerCase() === 'aceptar') {
+                    try {
+                        if (await handleGachaAccept(sock, msg)) continue;
+                    } catch (e) {
+                        console.error('[GACHA ACCEPT]:', e);
+                    }
+                }
+
                 if (await handleAntilink(sock, msg, rawMsg, text)) continue;
 
                 const parsed = extractCommandInfo(text);
@@ -383,5 +393,4 @@ export function handler(sock: WASocket) {
             }
         }
     });
-        }
-        
+}
