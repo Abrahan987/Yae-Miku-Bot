@@ -1,7 +1,7 @@
 import { getUser, updateUser, getCooldown, setCooldown } from '../lib/database.ts';
 
 export const command = ['balance', 'bal', 'saldo', 'dinero'];
-export const category = 'economia';
+export const category = 'gacha';
 export const description = 'Ver tu saldo de yen.';
 export const admin = false;
 export const botAdmin = false;
