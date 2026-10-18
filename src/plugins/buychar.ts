@@ -1,4 +1,4 @@
-import { withGacha, getCatalog, getSales, getClaim, removeSale, transferClaim, transaction, getYen, addYen, displayName, afterCommand } from '../../lib/gacha.ts';
+import { withGacha, getCatalog, getSales, getClaim, removeSale, transferClaim, transaction, getYen, addYen, displayName, afterCommand } from '../lib/gacha.ts';
 
 export const command = ['buyc', 'buycharacter', 'buychar'];
 export const category = 'gacha';
