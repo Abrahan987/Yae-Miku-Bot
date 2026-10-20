@@ -447,6 +447,33 @@ process.on('unhandledRejection', (reason) => {
     console.error(reason);
 });
 
+async function showBanner() {
+    try {
+        const { default: cfonts } = await import('cfonts');
+
+        cfonts.say('YAE MIKU', {
+            font: 'tiny',
+            align: 'center',
+            gradient: ['#ffb6da', '#dcb4ff'],
+            transitionGradient: true,
+            space: false
+        });
+
+        cfonts.say('BY ABRAHAN-M', {
+            font: 'console',
+            align: 'center',
+            gradient: ['#dcb4ff', '#ffb6da'],
+            space: false
+        });
+
+        console.log('');
+    } catch {
+        console.log(`\n${rosa}  YAE MIKU${reset}\n${lila}  BY ABRAHAN-M${reset}\n`);
+    }
+}
+
+await showBanner();
+
 startBot().catch((err) => {
     console.error(
         `\n${rojo}[ FATAL ] El bot no pudo iniciar:${reset}`
