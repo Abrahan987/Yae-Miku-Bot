@@ -452,7 +452,7 @@ async function showBanner() {
         const { default: cfonts } = await import('cfonts');
 
         cfonts.say('YAE MIKU', {
-            font: 'tiny',
+            font: 'simple',
             align: 'center',
             gradient: ['#ffb6da', '#dcb4ff'],
             transitionGradient: true,
