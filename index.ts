@@ -171,7 +171,7 @@ ${rosa}─────── ❀ ───────${reset}
 
         if (usarCodigo && !state.creds.registered) {
             console.log(`\n${rosa}Por favor, Ingrese el número de WhatsApp.${reset}`);
-            console.log(`${lila}Ejemplo: +521XXXXXXXXXX${reset}\n`);
+            console.log(`${lila}Ejemplo: +5732376496xx${reset}\n`);
 
             let num = await askQuestion(`${rosa}---> ${reset}`);
 
