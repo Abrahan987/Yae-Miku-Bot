@@ -1,4 +1,5 @@
 import { resetWarnings } from '../lib/database.ts';
+import { resolveTarget, num } from '../lib/participants.ts';
 
 export const command = ['resetwarn', 'clearwarn', 'eliminarwarn'];
 export const category = 'admin';
@@ -29,24 +30,22 @@ export default async function (sock: any, msg: any, extra: any) {
             );
         }
 
-        const metadata = await sock.groupMetadata(chatId);
-        const participants = metadata?.participants || [];
-        const targetParticipant = participants.find((p: any) => p.id === targetJid);
+        const { target: targetParticipant, key: warnKey } = await resolveTarget(sock, msg, chatId);
 
         if (!targetParticipant) {
             return msg.reply('⚠︎ 𝙴𝙻 𝚄𝚂𝚄𝙰𝚁𝙸𝙾 𝙽𝙾 𝙴𝚂𝚃𝙰́ 𝙴𝙽 𝙴𝙻 𝙶𝚁𝚄𝙿𝙾.');
         }
 
-        resetWarnings(chatId, targetJid);
+        resetWarnings(chatId, warnKey);
 
         return sock.sendMessage(
             chatId,
             {
                 text:
                     `✅ 𝙰𝙳𝚅𝙴𝚁𝚃𝙴𝙽𝙲𝙸𝙰𝚂 𝚁𝙴𝙸𝙽𝙸𝙲𝙸𝙰𝙳𝙰𝚂\n\n` +
-                    `🪷 @${targetJid.split('@')[0]}\n` +
+                    `🪷 @${num(targetParticipant.id)}\n` +
                     `📌 𝙰𝚑𝚘𝚛𝚊 𝚗𝚘 𝚝𝚒𝚎𝚗𝚎 𝚊𝚍𝚟𝚎𝚛𝚝𝚎𝚗𝚌𝚒𝚊𝚜.`,
-                mentions: [targetJid]
+                mentions: [targetParticipant.id]
             },
             { quoted: msg }
         );

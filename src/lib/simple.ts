@@ -3,7 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import { proto, getContentType, jidDecode, downloadContentFromMessage } from '@whiskeysockets/baileys';
 
-const sessionDirConfig = path.join(process.cwd(), 'Session');
+const sessionDirs = (): string[] => {
+    const dirs = [path.join(process.cwd(), 'sessions')];
+    const subsDir = path.join(process.cwd(), 'subs');
+    try {
+        for (const d of fs.readdirSync(subsDir)) dirs.push(path.join(subsDir, d));
+    } catch {}
+    return dirs;
+};
 const maxLidCacheSize = 5000;
 
 export const lidCache = new Map<string, string>();
@@ -18,6 +25,18 @@ function setLidCache(lid: string, jid: string): void {
 
 const messageCache = new WeakMap<object, any>();
 const contentTypeCache = new WeakMap<object, string | undefined>();
+
+export function rememberParticipants(participants: any[]): void {
+    for (const p of participants || []) {
+        const ids = [p?.id, p?.lid, p?.phoneNumber].filter((x) => typeof x === 'string') as string[];
+        const pn = ids.find((x) => x.endsWith('@s.whatsapp.net'));
+        if (!pn) continue;
+        for (const x of ids) {
+            const m = x.match(/^([^@:]+)(?::\d+)?@lid$/);
+            if (m) setLidCache(m[1], decodeJid(pn));
+        }
+    }
+}
 
 export const decodeJid = (jid: any): string => {
     if (!jid || typeof jid !== 'string') return '';
@@ -94,18 +113,19 @@ export const UserJid = (sock: any, chat?: string, jid?: string): string => {
         } catch (err) {}
     }
 
-    const mappingFile = path.join(sessionDirConfig, `lid-mapping-${lidNumber}_reverse.json`);
-
-    try {
-        if (fs.existsSync(mappingFile)) {
-            const phoneStr = JSON.parse(fs.readFileSync(mappingFile, 'utf-8'));
-            if (phoneStr) {
-                const resolvedJid = `${phoneStr}@s.whatsapp.net`;
-                setLidCache(lidNumber, resolvedJid);
-                return resolvedJid;
+    for (const dir of sessionDirs()) {
+        const mappingFile = path.join(dir, `lid-mapping-${lidNumber}_reverse.json`);
+        try {
+            if (fs.existsSync(mappingFile)) {
+                const phoneStr = JSON.parse(fs.readFileSync(mappingFile, 'utf-8'));
+                if (phoneStr) {
+                    const resolvedJid = `${phoneStr}@s.whatsapp.net`;
+                    setLidCache(lidNumber, resolvedJid);
+                    return resolvedJid;
+                }
             }
-        }
-    } catch (err) {}
+        } catch (err) {}
+    }
 
     return cleanJid;
 };
@@ -148,20 +168,21 @@ function processQuotedMessage(sock: any, chatJid: string, contextInfo: any): any
         const quotedParticipant = decodeJid(contextInfo.participant || '');
         const resolvedParticipant = UserJid(sock, chatJid, quotedParticipant);
 
-        const botJid = decodeJid(sock.user?.id || '');
+        const botJids = [sock.user?.id, sock.user?.lid].map(decodeJid).filter(Boolean);
+        const botSet = new Set([...botJids, ...botJids.map((j) => UserJid(sock, chatJid, j))]);
 
         return {
             type: quotedType,
             msg: quotedMsg,
             key: {
                 remoteJid: chatJid,
-                fromMe: quotedParticipant === botJid,
+                fromMe: [quotedParticipant, resolvedParticipant].some((j) => botSet.has(j)),
                 id: contextInfo.stanzaId,
                 participant: resolvedParticipant
             },
             sender: resolvedParticipant,
             body: quotedBody,
-            mentionedJid: contextInfo.mentionedJid || [],
+            mentionedJid: ((contextInfo.mentionedJid || []) as string[]).map((j) => UserJid(sock, chatJid, j) || j),
             download: (): Promise<Buffer | null> => downloadMedia(quotedMsg, quotedType || '')
         };
     } catch (error) {
@@ -200,7 +221,7 @@ export function serialize(sock: any, m: proto.IWebMessageInfo): any {
 
         const contextInfo = msg?.contextInfo || rawMsg?.contextInfo;
         const quoted = processQuotedMessage(sock, chat, contextInfo);
-        const mentionedJid = contextInfo?.mentionedJid || [];
+        const mentionedJid = ((contextInfo?.mentionedJid || []) as string[]).map((j) => UserJid(sock, chat, j) || j);
 
         const result = {
             ...m,

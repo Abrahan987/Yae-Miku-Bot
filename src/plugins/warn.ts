@@ -15,7 +15,7 @@ export default async function (sock: any, msg: any, extra: any) {
     const chatId = msg.from || msg.chat || extra?.chat;
 
     try {
-        const { raw, resolved, target } = await resolveTarget(sock, msg, chatId);
+        const { raw, target, key } = await resolveTarget(sock, msg, chatId);
 
         if (!raw) {
             return msg.reply(
@@ -33,10 +33,7 @@ export default async function (sock: any, msg: any, extra: any) {
             return msg.reply('⚠️ No puedo advertir a un administrador.');
         }
 
-        // Clave estable para guardar advertencias: el numero de telefono si se pudo resolver.
-        const warnKey = String(resolved || '').endsWith('@s.whatsapp.net')
-            ? resolved
-            : `${num(target.id)}@s.whatsapp.net`;
+        const warnKey = key;
 
         const total = addWarning(chatId, warnKey);
 

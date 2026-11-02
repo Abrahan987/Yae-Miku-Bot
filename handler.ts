@@ -1,6 +1,6 @@
 import './config.ts';
 import type { WASocket } from '@whiskeysockets/baileys';
-import { serialize, UserJid, decodeJid } from '#simple';
+import { serialize, UserJid, decodeJid, rememberParticipants } from '#simple';
 import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageCount } from '#db';
 import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
@@ -108,6 +108,7 @@ async function getGroupMetadata(sock: any, chatId: string): Promise<any> {
     try {
         const metadata = await sock.groupMetadata(chatId);
         if (metadata) {
+            rememberParticipants(metadata.participants || []);
             groupMetaCache.set(key, { metadata, ts: Date.now() });
             return metadata;
         }
@@ -208,10 +209,13 @@ function extractCommandInfo(text: string): { cleanCmd: string; usedPrefix: strin
     return cleanCmd ? { cleanCmd, usedPrefix } : null;
 }
 
-function isConfiguredOwner(sender: string): boolean {
+function isConfiguredOwner(...senders: string[]): boolean {
     const owner = normalizeNumber((global as any).owner);
-    const n = normalizeNumber(sender);
-    return !!owner && (n === owner || stripMexOne(n) === stripMexOne(owner));
+    if (!owner) return false;
+    return senders.some((s) => {
+        const n = normalizeNumber(s || '');
+        return !!n && (n === owner || stripMexOne(n) === stripMexOne(owner));
+    });
 }
 
 export function handler(sock: WASocket) {
@@ -355,7 +359,7 @@ export function handler(sock: WASocket) {
                 const reqAdmin = Boolean(plugin.admin);
                 const reqBotAdmin = Boolean(plugin.botAdmin);
                 const reqOwner = Boolean(plugin.owner);
-                const owner = rawMsg?.key?.fromMe || isConfiguredOwner(msg.sender);
+                const owner = rawMsg?.key?.fromMe || isConfiguredOwner(msg.sender, rawMsg?.key?.participant || '', rawMsg?.key?.participantPn || '');
 
                 if (reqOwner && !owner) {
                     await msg.reply(yae('𝙰𝙲𝙲𝙴𝚂𝙾 𝙳𝙴𝙽𝙴𝙶𝙰𝙳𝙾', 'Este comando solo puede ser usado por el *owner* del bot.'));
