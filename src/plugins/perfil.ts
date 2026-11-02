@@ -12,7 +12,7 @@ export default async function (sock: any, msg: any, extra: any) {
 
     try {
         const target = msg.mentionedJid?.[0] || msg.quoted?.sender || msg.sender;
-        const number = target.split('@')[0].split(':')[0];
+        const number = target.split('@')[0];
         const user = getUser(target);
 
         // Guardar el nombre si aún no existe y es el propio usuario
@@ -44,8 +44,8 @@ export default async function (sock: any, msg: any, extra: any) {
 
         let caption =
             `🍓͜ᩧ𑂳ᰍ  PERFIL\n\n` +
-            `🪷 Nombre: *${name}*\n` +
-            `📱 Número: @${number}\n` +
+            `🪷 Nombre: @${number}\n` +
+            `📱 Número: ${number}\n` +
             `💰 Dinero: *¥${yen.toLocaleString()}*\n` +
             `🏆 Ranking: *#${rankRow?.pos ?? 1}* de ${totalRow?.total ?? 1}`;
 
