@@ -1,4 +1,4 @@
-import { UserJid } from '#simple';
+import { UserJid, rememberParticipants } from '#simple';
 
 export const num = (x: any): string =>
     String(x || '').split('@')[0].split(':')[0].replace(/[^\d]/g, '');
@@ -20,6 +20,14 @@ export function findParticipant(participants: any[], ...jids: any[]): any {
 
 export const isAdminP = (p: any): boolean => p?.admin === 'admin' || p?.admin === 'superadmin';
 
+/** Clave unica por usuario: siempre el JID de telefono si se conoce, nunca un LID inventado. */
+export function userKey(target: any, resolved?: string): string {
+    if (resolved && resolved.endsWith('@s.whatsapp.net')) return resolved;
+    const pn = [target?.phoneNumber, target?.id].find((x) => typeof x === 'string' && x.endsWith('@s.whatsapp.net'));
+    if (pn) return pn.replace(/:\d+@/, '@');
+    return target?.id || resolved || '';
+}
+
 /** Obtiene el usuario objetivo (mencion o mensaje citado) y lo busca en el grupo, soportando LID y numero. */
 export async function resolveTarget(sock: any, msg: any, chatId: string) {
     const raw: string = (msg.mentionedJid || [])[0] || msg.quoted?.sender || '';
@@ -30,7 +38,8 @@ export async function resolveTarget(sock: any, msg: any, chatId: string) {
 
     const metadata = await sock.groupMetadata(chatId);
     const participants: any[] = metadata?.participants || [];
+    rememberParticipants(participants);
     const target = findParticipant(participants, raw, resolved, msg.quoted?.key?.participant);
 
-    return { raw, resolved, target, participants };
+    return { raw, resolved, target, participants, key: userKey(target, resolved) };
 }

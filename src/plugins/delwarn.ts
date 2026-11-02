@@ -1,4 +1,5 @@
 import { getWarnings, removeWarning, resetWarnings } from '../lib/database.ts';
+import { resolveTarget, num } from '../lib/participants.ts';
 
 export const command = ['delwarn'];
 export const category = 'admin';
@@ -12,9 +13,9 @@ export default async function (sock: any, msg: any, extra: any) {
     }
 
     const chatId = msg.from || msg.chat;
-    const targetJid = (msg.mentionedJid || [])[0] || msg.quoted?.sender;
+    const { raw, target, key: warnKey } = await resolveTarget(sock, msg, chatId);
 
-    if (!targetJid) {
+    if (!raw) {
         return msg.reply(
             `🍓 Uso\n\n` +
             `> ${(global as any).prefix?.[0] || '.'}delwarn @usuario\n` +
@@ -23,21 +24,22 @@ export default async function (sock: any, msg: any, extra: any) {
     }
 
     try {
-        if (getWarnings(chatId, targetJid) === 0) {
+        if (!target) return msg.reply('⚠️ Este usuario no está en el grupo.');
+        if (getWarnings(chatId, warnKey) === 0) {
             return msg.reply('⚠️ Este usuario no tiene advertencias.');
         }
 
         const todas = ((extra?.args || []).join(' ') || '').toLowerCase().includes('all');
-        const restantes = todas ? resetWarnings(chatId, targetJid) : removeWarning(chatId, targetJid);
+        const restantes = todas ? resetWarnings(chatId, warnKey) : removeWarning(chatId, warnKey);
 
         return sock.sendMessage(
             chatId,
             {
                 text:
                     `✅ *ADVERTENCIA ELIMINADA*\n\n` +
-                    `🪷 @${targetJid.split('@')[0]}\n` +
+                    `🪷 @${num(target.id)}\n` +
                     `📌 Tiene ${restantes}/3 advertencias.`,
-                mentions: [targetJid]
+                mentions: [target.id]
             },
             { quoted: msg }
         );
