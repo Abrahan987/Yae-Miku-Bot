@@ -59,6 +59,15 @@ export async function loadDB() {
             groupJid TEXT PRIMARY KEY,
             botNumber TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS subbot_config (
+            phone TEXT PRIMARY KEY,
+            name TEXT DEFAULT NULL,
+            banner TEXT DEFAULT NULL,
+            owner_jid TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     `);
 }
 
@@ -307,6 +316,72 @@ export function setCooldown(userJid: string, action: string, untilTime: number):
         VALUES (?, ?, ?)
         ON CONFLICT(userJid, action) DO UPDATE SET until_time = excluded.until_time
     `).run(userJid, action, untilTime);
+}
+
+export function getSubBotConfig(phone: string) {
+    const stmt = db.prepare('SELECT * FROM subbot_config WHERE phone = ?');
+    return stmt.get(phone) as any;
+}
+
+export function setSubBotConfig(
+    phone: string,
+    data: Partial<{
+        name: string;
+        banner: string;
+        owner_jid: string;
+    }>
+) {
+    const existing = getSubBotConfig(phone);
+
+    if (!existing) {
+        if (!data.owner_jid) {
+            throw new Error('owner_jid es requerido al crear nueva configuración');
+        }
+        db.prepare(`
+            INSERT INTO subbot_config (phone, name, banner, owner_jid)
+            VALUES (?, ?, ?, ?)
+        `).run(phone, data.name || null, data.banner || null, data.owner_jid);
+    } else {
+        db.prepare(`
+            UPDATE subbot_config
+            SET name = COALESCE(?, name),
+                banner = COALESCE(?, banner),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE phone = ?
+        `).run(
+            data.name || null,
+            data.banner || null,
+            phone
+        );
+    }
+
+    return getSubBotConfig(phone);
+}
+
+export function updateSubBotName(phone: string, name: string) {
+    const existing = getSubBotConfig(phone);
+    if (!existing) {
+        throw new Error('Configuración de subbot no encontrada');
+    }
+    db.prepare(`
+        UPDATE subbot_config
+        SET name = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE phone = ?
+    `).run(name, phone);
+    return getSubBotConfig(phone);
+}
+
+export function updateSubBotBanner(phone: string, banner: string) {
+    const existing = getSubBotConfig(phone);
+    if (!existing) {
+        throw new Error('Configuración de subbot no encontrada');
+    }
+    db.prepare(`
+        UPDATE subbot_config
+        SET banner = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE phone = ?
+    `).run(banner, phone);
+    return getSubBotConfig(phone);
 }
 
 export { db };
