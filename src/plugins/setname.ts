@@ -3,6 +3,7 @@ import { isOwner, deco, warn } from '../lib/perms.ts';
 export const command = ['setname', 'setbotname'];
 export const category = 'owner';
 export const description = 'Cambiar el nombre del bot (solo owner).';
+export const owner = true;
 export const admin = false;
 export const botAdmin = false;
 
