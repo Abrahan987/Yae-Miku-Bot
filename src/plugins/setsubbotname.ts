@@ -24,8 +24,9 @@ export const botAdmin = false;
 export default async function (sock: any, msg: any, extra: any) {
     const subs = Array.from(getActiveBots().values());
 
-    if (subs.includes(sock)) {
-        return msg.reply('🪷 Este comando solo funciona en el bot principal.');
+    // FIXED: Debería FUNCIONAR SOLO en subbots, no en el bot principal
+    if (!subs.includes(sock)) {
+        return msg.reply('🪷 Este comando solo funciona desde un subbot vinculado.');
     }
 
     const value = (extra?.args || []).join(' ').trim();

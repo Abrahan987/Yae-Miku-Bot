@@ -29,8 +29,9 @@ function isValidUrl(url: string): boolean {
 export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {
     const subs = Array.from(getActiveBots().values());
 
-    if (subs.includes(sock)) {
-        return msg.reply('🪷 Este comando solo funciona en el bot principal.');
+    // FIXED: Debería FUNCIONAR SOLO en subbots, no en el bot principal
+    if (!subs.includes(sock)) {
+        return msg.reply('🪷 Este comando solo funciona desde un subbot vinculado.');
     }
 
     const p = (global as any).prefix?.[0] || '.';
