@@ -1,5 +1,5 @@
 import { getActiveBots } from '../lib/subbot.ts';
-import { canModifySubBot, setSubBotBanner } from '../lib/subbot_config.ts';
+import { isSubBotOwner, setSubBotBanner } from '../lib/subbot_config.ts';
 
 const normalizePhone = (input: string): string => {
     let s = String(input).replace(/\D/g, '');
@@ -29,7 +29,6 @@ function isValidUrl(url: string): boolean {
 export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {
     const subs = Array.from(getActiveBots().values());
 
-    // FIXED: Debería FUNCIONAR SOLO en subbots, no en el bot principal
     if (!subs.includes(sock)) {
         return msg.reply('🪷 Este comando solo funciona desde un subbot vinculado.');
     }
@@ -78,7 +77,7 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
             return msg.reply('⚠️ No se pudo identificar este subbot.');
         }
 
-        if (!canModifySubBot(botPhone, msg.sender)) {
+        if (!isSubBotOwner(sock, msg, rawMsg, botPhone)) {
             return msg.reply(
                 `${(global as any).namebot}\n\n` +
                 `🍓͜ᩧ𑂳ᰍ  𝙰𝙲𝙲𝙴𝚂𝙾 𝙳𝙴𝙽𝙴𝙶𝙰𝙳𝙾\n\n` +

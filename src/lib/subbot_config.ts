@@ -1,3 +1,5 @@
+import { UserJid } from '#simple';
+import { isOwner } from './perms.ts';
 import { getSubBotConfig as getSubBotConfigDB, setSubBotConfig as setSubBotConfigDB, updateSubBotName as updateSubBotNameDB, updateSubBotBanner as updateSubBotBannerDB } from './database.ts';
 
 const normalizePhone = (input: string): string => {
@@ -16,7 +18,7 @@ const cleanJid = (jid: string = ''): string => {
 
 export function initializeSubBotConfig(phone: string, ownerJid: string) {
     const normalizedPhone = normalizePhone(phone);
-    const ownerNumber = cleanJid(ownerJid);
+    const ownerNumber = cleanJid(ownerJid) || normalizedPhone;
 
     try {
         const existing = getSubBotConfigDB(normalizedPhone);
@@ -55,16 +57,39 @@ export function getSubBotBanner(phone: string): string | null {
     }
 }
 
+const digits = (x: any): string => String(x || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+
 export function canModifySubBot(phone: string, userJid: string): boolean {
     try {
         const normalized = normalizePhone(phone);
         const config = getSubBotConfigDB(normalized);
         if (!config) return false;
-
-        const userNumber = cleanJid(userJid);
-        return config.owner_jid === userNumber;
+        const userNumber = digits(userJid);
+        return !!userNumber && (userNumber === digits(config.owner_jid) || userNumber === normalized);
     } catch (error) {
         console.error('[SUBBOT_CONFIG_CAN_MODIFY]', phone, error);
+        return false;
+    }
+}
+
+export function isSubBotOwner(sock: any, msg: any, rawMsg: any, phone: string): boolean {
+    try {
+        if (rawMsg?.key?.fromMe) return true;
+        if (isOwner(sock, msg, rawMsg)) return true;
+
+        const sender = String(msg?.sender || rawMsg?.key?.participant || rawMsg?.key?.remoteJid || '');
+        let resolved = sender;
+        try {
+            resolved = UserJid(sock, msg?.from, sender) || sender;
+        } catch {}
+
+        const candidates = [sender, resolved].map(digits).filter(Boolean);
+        const own = [sock?.user?.id, sock?.user?.lid].map(digits).filter(Boolean);
+        if (candidates.some((n) => own.includes(n))) return true;
+
+        return candidates.some((n) => canModifySubBot(phone, n));
+    } catch (error) {
+        console.error('[SUBBOT_CONFIG_IS_OWNER]', phone, error);
         return false;
     }
 }
