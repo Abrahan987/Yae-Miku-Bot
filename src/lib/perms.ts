@@ -17,6 +17,19 @@ export function isOwner(sock: any, msg: any, rawMsg?: any): boolean {
         .filter(Boolean)
         .flatMap((n) => [n, strip(n)]);
 
+    if (rawMsg?.key?.fromMe && sock?.subbotPhone) {
+        const own = [sock.user?.id, sock.user?.lid, sock.subbotPhone]
+            .map((j) => {
+                let r = j;
+                try { r = UserJid(sock, msg?.from, j) || j; } catch {}
+                return [norm(j), norm(r)];
+            })
+            .flat()
+            .filter(Boolean)
+            .flatMap((n) => [n, strip(n)]);
+        if (own.some((n) => owners.includes(n))) return true;
+    }
+
     let resolved = msg.sender;
     try {
         resolved = UserJid(sock, msg.from, msg.sender) || msg.sender;
