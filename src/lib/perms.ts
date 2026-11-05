@@ -3,9 +3,13 @@ import { UserJid } from '#simple';
 const norm = (x: any): string => String(x || '').split('@')[0].split(':')[0].replace(/\D/g, '');
 const strip = (n: string): string => (n.startsWith('521') ? '52' + n.slice(3) : n);
 
+export function isMainBot(sock: any): boolean {
+    return !sock?.subbotPhone;
+}
+
 /** true si quien escribe es el owner (global.owner) o el propio bot */
 export function isOwner(sock: any, msg: any, rawMsg?: any): boolean {
-    if (rawMsg?.key?.fromMe) return true;
+    if (rawMsg?.key?.fromMe && !sock?.subbotPhone) return true;
 
     const owners = ([] as any[])
         .concat((global as any).owner || [])

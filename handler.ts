@@ -390,7 +390,7 @@ export function handler(sock: WASocket) {
                 const reqAdmin = Boolean(plugin.admin);
                 const reqBotAdmin = Boolean(plugin.botAdmin);
                 const reqOwner = Boolean(plugin.owner);
-                const owner = rawMsg?.key?.fromMe || isConfiguredOwner(msg.sender, rawMsg?.key?.participant || '', rawMsg?.key?.participantPn || '');
+                const owner = (rawMsg?.key?.fromMe && !(sock as any).subbotPhone) || isConfiguredOwner(msg.sender, rawMsg?.key?.participant || '', rawMsg?.key?.participantPn || '');
 
                 if (reqOwner && !owner) {
                     await msg.reply(yae('𝙰𝙲𝙲𝙴𝚂𝙾 𝙳𝙴𝙽𝙴𝙶𝙰𝙳𝙾', 'Este comando solo puede ser usado por el *owner* del bot.'));

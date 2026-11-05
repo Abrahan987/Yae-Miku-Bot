@@ -1,4 +1,4 @@
-import { isOwner, deco, warn } from '../lib/perms.ts';
+import { isOwner, isMainBot, deco, warn } from '../lib/perms.ts';
 import { getImageFromMessage, isHttpUrl } from '../lib/subbot_config.ts';
 import fs from 'fs';
 import path from 'path';
@@ -11,7 +11,7 @@ export const admin = false;
 export const botAdmin = false;
 
 export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {
-    if (!isOwner(sock, msg, rawMsg)) {
+    if (!isMainBot(sock) || !isOwner(sock, msg, rawMsg)) {
         return sock.sendMessage(msg.from, { text: warn.owner() }, { quoted: msg });
     }
 
