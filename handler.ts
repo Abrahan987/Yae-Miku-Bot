@@ -391,7 +391,7 @@ export function handler(sock: WASocket) {
                 const reqAdmin = Boolean(plugin.admin);
                 const reqBotAdmin = Boolean(plugin.botAdmin);
                 const reqOwner = Boolean(plugin.owner);
-                const owner = isOwnerPerm(sock, msg, rawMsg) || isConfiguredOwner(...(rawMsg?.key?.fromMe ? [(sock as any).user?.id || '', (sock as any).user?.lid || ''] : [msg.sender]), rawMsg?.key?.participant || '', rawMsg?.key?.participantPn || '');
+                const owner = isOwnerPerm(sock, msg, rawMsg) || isConfiguredOwner(msg.sender, rawMsg?.key?.participant || '', rawMsg?.key?.participantPn || '');
 
                 if (msg.isGroup && !owner && !isAdmin) {
                     let adminOnly = false;

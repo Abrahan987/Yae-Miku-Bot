@@ -67,7 +67,10 @@ export function canModifySubBot(phone: string, userJid: string): boolean {
         const config = getSubBotConfigDB(normalized);
         if (!config) return false;
         const userNumber = digits(userJid);
-        return !!userNumber && (userNumber === digits(config.owner_jid) || userNumber === normalized);
+        if (!userNumber) return false;
+        let ownerResolved = '';
+        try { ownerResolved = digits(UserJid(null, '', `${digits(config.owner_jid)}@lid`)); } catch {}
+        return userNumber === digits(config.owner_jid) || userNumber === normalized || (!!ownerResolved && userNumber === ownerResolved);
     } catch (error) {
         console.error('[SUBBOT_CONFIG_CAN_MODIFY]', phone, error);
         return false;
@@ -85,7 +88,10 @@ export function isSubBotOwner(sock: any, msg: any, rawMsg: any, phone: string): 
             resolved = UserJid(sock, msg?.from, sender) || sender;
         } catch {}
 
-        const candidates = [sender, resolved].map(digits).filter(Boolean);
+        const key = rawMsg?.key || {};
+        const candidates = [sender, resolved, key.participant, key.participantPn, key.participantAlt, key.remoteJidAlt]
+            .map(digits)
+            .filter(Boolean);
         const own = [sock?.user?.id, sock?.user?.lid].map(digits).filter(Boolean);
         if (candidates.some((n) => own.includes(n))) return true;
 
