@@ -12,7 +12,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Baileys](https://img.shields.io/badge/Baileys-WhatsApp%20Web-25D366?style=flat-square&logo=whatsapp&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-node%3Asqlite-003B57?style=flat-square&logo=sqlite&logoColor=white)
-![Plugins](https://img.shields.io/badge/plugins-79-FF7EB6?style=flat-square)
+![Plugins](https://img.shields.io/badge/plugins-112-FF7EB6?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
 
 [**Instalar**](#-instalación) · [**Cómo funciona**](#-cómo-funciona) · [**Comandos**](#-comandos) · [**Crear un plugin**](#-crear-un-plugin) · [**Problemas comunes**](#-problemas-comunes)
