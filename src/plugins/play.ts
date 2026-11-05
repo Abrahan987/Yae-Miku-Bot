@@ -31,49 +31,30 @@ interface AudioResult {
 const client = axios.create({
     httpAgent: new http.Agent({ keepAlive: true, maxSockets: 30 }),
     httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 30 }),
-    headers: {
-        'User-Agent': UA,
-        Accept: 'application/json'
-    }
+    headers: { 'User-Agent': UA, Accept: 'application/json' }
 });
 
-const searchCache = new LRUCache<string, any>({
-    max: 300,
-    ttl: 1000 * 60 * 60
-});
-
+const searchCache = new LRUCache<string, any>({ max: 300, ttl: 1000 * 60 * 60 });
 const audioCache = new LRUCache<string, AudioResult>({
     maxSize: 200 * 1024 * 1024,
     sizeCalculation: (a) => a.buffer.length,
     ttl: 1000 * 60 * 60
 });
-
 const inflight = new Map<string, Promise<AudioResult>>();
 
 const cleanTitle = (title: string) =>
-    title
-        .replace(/[\\/:*?"<>|]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 100);
+    title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
 
 const formatNumber = (value: any) =>
     typeof value !== 'number' ? 'N/A' : value.toLocaleString('es-CO');
 
 const getVideoId = (text: string) => {
     const raw = text.trim();
-
-    if (/^[\w-]{11}$/.test(raw)) {
-        return raw;
-    }
-
-    return raw.match(
-        /(?:youtu\.be\/|v=|shorts\/|embed\/|live\/|\/v\/)([\w-]{11})/i
-    )?.[1] || null;
+    if (/^[\w-]{11}$/.test(raw)) return raw;
+    return raw.match(/(?:youtu\.be\/|v=|shorts\/|embed\/|live\/|\/v\/)([\w-]{11})/i)?.[1] || null;
 };
 
-const isLink = (v: any): v is string =>
-    typeof v === 'string' && /^https?:\/\//i.test(v);
+const isLink = (v: any): v is string => typeof v === 'string' && /^https?:\/\//i.test(v);
 
 const minBytesFor = (seconds?: number) =>
     seconds && seconds > 0
@@ -82,57 +63,21 @@ const minBytesFor = (seconds?: number) =>
 
 const PROVIDERS: Record<string, (url: string, query: string) => Promise<Link>> = {
     ryuzei: async (url) => {
-        const { data } = await client.get(
-            'https://api.stellarwa.xyz/dl/ytmp3v3',
-            {
-                params: {
-                    url,
-                    key: 'proyectsV2'
-                },
-                timeout: 30000
-            }
-        );
-
-        const download =
-            data?.data?.download ||
-            data?.data?.url ||
-            data?.data?.dl ||
-            data?.download ||
-            data?.url;
-
-        if (data?.status === false || !isLink(download)) {
-            throw new Error(data?.message || 'sin enlace');
-        }
-
-        return {
-            dl: download,
-            title:
-                data?.data?.title ||
-                data?.data?.filename ||
-                data?.title
-        };
+        const { data } = await client.get('https://api.ryuzei.xyz/download/ytmp3', {
+            params: { url },
+            timeout: 30000
+        });
+        if (!data?.status || !isLink(data?.data?.download)) throw new Error('sin enlace');
+        return { dl: data.data.download, title: data.data.title };
     },
 
     lempi: async (url) => {
-        const { data } = await client.get(
-            'https://api.lempi.lat/dl/yta',
-            {
-                params: {
-                    url,
-                    apikey: LEMPI_KEY
-                },
-                timeout: 30000
-            }
-        );
-
-        if (!data?.status || !isLink(data?.descarga?.url)) {
-            throw new Error('sin enlace');
-        }
-
-        return {
-            dl: data.descarga.url,
-            title: data.descarga.archivo
-        };
+        const { data } = await client.get('https://api.lempi.lat/dl/yta', {
+            params: { url, apikey: LEMPI_KEY },
+            timeout: 30000
+        });
+        if (!data?.status || !isLink(data?.descarga?.url)) throw new Error('sin enlace');
+        return { dl: data.descarga.url, title: data.descarga.archivo };
     },
 
     puruboy: async (url) => {
@@ -141,130 +86,61 @@ const PROVIDERS: Record<string, (url: string, query: string) => Promise<Link>> =
             { url },
             { timeout: 30000 }
         );
-
         const r = data?.result;
-
-        if (!isLink(r?.download_url)) {
-            throw new Error('sin enlace');
-        }
-
-        return {
-            dl: r.download_url,
-            title: r.title
-        };
+        if (!isLink(r?.download_url)) throw new Error('sin enlace');
+        return { dl: r.download_url, title: r.title };
     },
 
     anabotUrl: async (url) => {
-        const { data } = await client.get(
-            'https://anabot.my.id/api/download/ytmp3',
-            {
-                params: {
-                    url,
-                    apikey: ANABOT_KEY
-                },
-                timeout: 30000
-            }
-        );
-
+        const { data } = await client.get('https://anabot.my.id/api/download/ytmp3', {
+            params: { url, apikey: ANABOT_KEY },
+            timeout: 30000
+        });
         const r = data?.data?.result;
-
-        if (!r?.success || !isLink(r.urls)) {
-            throw new Error('sin enlace');
-        }
-
-        return {
-            dl: r.urls,
-            title: r.metadata?.title
-        };
+        if (!r?.success || !isLink(r.urls)) throw new Error('sin enlace');
+        return { dl: r.urls, title: r.metadata?.title };
     },
 
     anabotQuery: async (_url, query) => {
-        const { data } = await client.get(
-            'https://anabot.my.id/api/download/playmusic',
-            {
-                params: {
-                    query,
-                    apikey: ANABOT_KEY
-                },
-                timeout: 30000
-            }
-        );
-
+        const { data } = await client.get('https://anabot.my.id/api/download/playmusic', {
+            params: { query, apikey: ANABOT_KEY },
+            timeout: 30000
+        });
         const r = data?.data?.result;
-
-        if (!r?.success || !isLink(r.urls)) {
-            throw new Error('sin enlace');
-        }
-
-        return {
-            dl: r.urls,
-            title: r.metadata?.title
-        };
+        if (!r?.success || !isLink(r.urls)) throw new Error('sin enlace');
+        return { dl: r.urls, title: r.metadata?.title };
     },
 
     siputzxV1: async (url) => {
-        const { data } = await client.get(
-            'https://api.siputzx.my.id/api/d/ytmp3',
-            {
-                params: { url },
-                timeout: 30000
-            }
-        );
-
-        if (!data?.status || !isLink(data?.result?.downloadUrl)) {
-            throw new Error('sin enlace');
-        }
-
-        return {
-            dl: data.result.downloadUrl,
-            title: data.result.title
-        };
+        const { data } = await client.get('https://api.siputzx.my.id/api/d/ytmp3', {
+            params: { url },
+            timeout: 30000
+        });
+        if (!data?.status || !isLink(data?.result?.downloadUrl)) throw new Error('sin enlace');
+        return { dl: data.result.downloadUrl, title: data.result.title };
     },
 
     siputzxV2: async (url) => {
-        const { data } = await client.get(
-            'https://api.siputzx.my.id/api/d/ytmp3v2',
-            {
-                params: { url },
-                timeout: 30000
-            }
-        );
-
-        if (!data?.status || !isLink(data?.data?.dl)) {
-            throw new Error('sin enlace');
-        }
-
-        return {
-            dl: data.data.dl,
-            title: data.data.title
-        };
+        const { data } = await client.get('https://api.siputzx.my.id/api/d/ytmp3v2', {
+            params: { url },
+            timeout: 30000
+        });
+        if (!data?.status || !isLink(data?.data?.dl)) throw new Error('sin enlace');
+        return { dl: data.data.dl, title: data.data.title };
     },
 
     nexevo: async (url) => {
-        const { data } = await client.get(
-            'https://nexevo-api.vercel.app/download/y',
-            {
-                params: { url },
-                timeout: 30000
-            }
-        );
-
-        if (!data?.status || !isLink(data?.result?.url)) {
-            throw new Error('sin enlace');
-        }
-
-        return {
-            dl: data.result.url,
-            title: data.result.info?.title
-        };
+        const { data } = await client.get('https://nexevo-api.vercel.app/download/y', {
+            params: { url },
+            timeout: 30000
+        });
+        if (!data?.status || !isLink(data?.result?.url)) throw new Error('sin enlace');
+        return { dl: data.result.url, title: data.result.info?.title };
     },
 
     saveTube: async (url) => {
         const id = getVideoId(url);
-
-        if (!id) {
-            throw new Error('id invalido');
-        }
+        if (!id) throw new Error('id invalido');
 
         const opts = {
             headers: {
@@ -275,80 +151,40 @@ const PROVIDERS: Record<string, (url: string, query: string) => Promise<Link>> =
             timeout: 30000
         };
 
-        const { data: cdnRes } = await client.get(
-            'https://media.savetube.vip/api/random-cdn',
-            opts
-        );
-
+        const { data: cdnRes } = await client.get('https://media.savetube.vip/api/random-cdn', opts);
         const cdn = cdnRes?.cdn;
-
-        if (!cdn) {
-            throw new Error('sin cdn');
-        }
+        if (!cdn) throw new Error('sin cdn');
 
         const info = await client.post(
             `https://${cdn}/v2/info`,
-            {
-                url: `https://www.youtube.com/watch?v=${id}`
-            },
+            { url: `https://www.youtube.com/watch?v=${id}` },
             opts
         );
 
         const raw = Buffer.from(info.data.data, 'base64');
-
         const decipher = crypto.createDecipheriv(
             'aes-128-cbc',
             Buffer.from(SAVETUBE_KEY, 'hex'),
             raw.subarray(0, 16)
         );
-
         const dec = JSON.parse(
-            Buffer.concat([
-                decipher.update(raw.subarray(16)),
-                decipher.final()
-            ]).toString()
+            Buffer.concat([decipher.update(raw.subarray(16)), decipher.final()]).toString()
         );
 
         const dl = await client.post(
             `https://${cdn}/download`,
-            {
-                id,
-                downloadType: 'audio',
-                quality: '128',
-                key: dec.key
-            },
+            { id, downloadType: 'audio', quality: '128', key: dec.key },
             opts
         );
-
         const link = dl.data?.data?.downloadUrl;
-
-        if (!isLink(link)) {
-            throw new Error('sin enlace');
-        }
-
-        return {
-            dl: link,
-            title: dec.title
-        };
+        if (!isLink(link)) throw new Error('sin enlace');
+        return { dl: link, title: dec.title };
     },
 
     cnv: async (url) => {
-        const headers = {
-            origin: 'https://frame.y2meta-uk.com',
-            'user-agent': 'Mozilla/5.0'
-        };
-
-        const { data: k } = await client.get(
-            'https://cnv.cx/v2/sanity/key',
-            {
-                headers,
-                timeout: 15000
-            }
-        );
-
-        if (!k?.key) {
-            throw new Error('sin key');
-        }
+        const headers = { origin: 'https://frame.y2meta-uk.com', 'user-agent': 'Mozilla/5.0' };
+        const { data: k } = await client.get('https://cnv.cx/v2/sanity/key', { headers, timeout: 15000 });
+        if (!k?.key) throw new Error('sin key');
 
         const body = new URLSearchParams({
             link: url,
@@ -356,36 +192,16 @@ const PROVIDERS: Record<string, (url: string, query: string) => Promise<Link>> =
             audioBitrate: '128',
             filenameStyle: 'pretty'
         });
-
-        const { data } = await client.post(
-            'https://cnv.cx/v2/converter',
-            body.toString(),
-            {
-                headers: {
-                    ...headers,
-                    key: k.key,
-                    'content-type': 'application/x-www-form-urlencoded'
-                },
-                timeout: 40000
-            }
-        );
-
-        if (!isLink(data?.url)) {
-            throw new Error('sin enlace');
-        }
-
-        return {
-            dl: data.url,
-            title: data.filename
-        };
+        const { data } = await client.post('https://cnv.cx/v2/converter', body.toString(), {
+            headers: { ...headers, key: k.key, 'content-type': 'application/x-www-form-urlencoded' },
+            timeout: 40000
+        });
+        if (!isLink(data?.url)) throw new Error('sin enlace');
+        return { dl: data.url, title: data.filename };
     }
 };
 
-async function downloadValidated(
-    link: string,
-    minBytes: number,
-    signal: AbortSignal
-): Promise<AudioResult> {
+async function downloadValidated(link: string, minBytes: number, signal: AbortSignal): Promise<AudioResult> {
     const res = await client.get(link, {
         responseType: 'stream',
         timeout: 120000,
@@ -396,23 +212,16 @@ async function downloadValidated(
     const type = String(res.headers['content-type'] || '');
     const declared = Number(res.headers['content-length'] || 0);
 
-    if (
-        /text|json|html/i.test(type) ||
-        (declared && declared < minBytes)
-    ) {
+    if (/text|json|html/i.test(type) || (declared && declared < minBytes)) {
         res.data.destroy();
-        throw new Error(
-            `archivo no valido (tipo=${type || '?'}, bytes=${declared || '?'})`
-        );
+        throw new Error(`archivo no valido (tipo=${type || '?'}, bytes=${declared || '?'})`);
     }
 
     const chunks: Buffer[] = [];
     let size = 0;
-
     for await (const chunk of res.data) {
         chunks.push(chunk);
         size += chunk.length;
-
         if (size > MAX_BYTES) {
             res.data.destroy();
             throw new Error('archivo demasiado grande');
@@ -420,19 +229,12 @@ async function downloadValidated(
     }
 
     const buffer = Buffer.concat(chunks);
-
-    if (buffer.length < minBytes) {
-        throw new Error(`audio demasiado corto (${buffer.length} bytes)`);
-    }
-
+    if (buffer.length < minBytes) throw new Error(`audio demasiado corto (${buffer.length} bytes)`);
     if (declared && buffer.length < declared) {
-        throw new Error(
-            `descarga incompleta (${buffer.length} de ${declared} bytes)`
-        );
+        throw new Error(`descarga incompleta (${buffer.length} de ${declared} bytes)`);
     }
 
     const isM4a = /mp4|m4a/i.test(type);
-
     return {
         buffer,
         mimetype: isM4a ? 'audio/mp4' : 'audio/mpeg',
@@ -440,38 +242,22 @@ async function downloadValidated(
     };
 }
 
-function raceProviders(
-    url: string,
-    query: string,
-    minBytes: number
-) {
+function raceProviders(url: string, query: string, minBytes: number) {
     const controller = new AbortController();
 
     const race = Promise.any(
         Object.entries(PROVIDERS).map(async ([name, run]) => {
             try {
                 const link = await run(url, query);
-
-                const audio = await downloadValidated(
-                    link.dl,
-                    minBytes,
-                    controller.signal
-                );
-
-                return {
-                    audio,
-                    provider: name
-                };
+                const audio = await downloadValidated(link.dl, minBytes, controller.signal);
+                return { audio, provider: name };
             } catch (e: any) {
                 if (!controller.signal.aborted) {
                     console.error(
                         `[PLAY] ${name}:`,
-                        e?.response?.status
-                            ? `HTTP ${e.response.status}`
-                            : e?.message || e
+                        e?.response?.status ? `HTTP ${e.response.status}` : e?.message || e
                     );
                 }
-
                 throw e;
             }
         })
@@ -480,55 +266,29 @@ function raceProviders(
     return race.finally(() => controller.abort());
 }
 
-async function fetchAudio(
-    videoId: string,
-    query: string,
-    seconds?: number
-): Promise<AudioResult> {
+async function fetchAudio(videoId: string, query: string, seconds?: number): Promise<AudioResult> {
     const url = `https://youtu.be/${videoId}`;
     let lastError: any;
 
     for (let attempt = 0; attempt < 2; attempt++) {
         try {
-            const { audio, provider } = await raceProviders(
-                url,
-                query,
-                minBytesFor(seconds)
-            );
-
-            console.log(
-                `[PLAY] Gano ${provider} (${audio.buffer.length} bytes)`
-            );
-
+            const { audio, provider } = await raceProviders(url, query, minBytesFor(seconds));
+            console.log(`[PLAY] Gano ${provider} (${audio.buffer.length} bytes)`);
             return audio;
         } catch (e: any) {
             lastError = e;
-
-            console.error(
-                `[PLAY] Intento ${attempt + 1}: todas las APIs fallaron`
-            );
+            console.error(`[PLAY] Intento ${attempt + 1}: todas las APIs fallaron`);
         }
     }
-
     throw lastError;
 }
 
-function getAudio(
-    videoId: string,
-    query: string,
-    seconds?: number
-): Promise<AudioResult> {
+function getAudio(videoId: string, query: string, seconds?: number): Promise<AudioResult> {
     const cached = audioCache.get(videoId);
-
-    if (cached) {
-        return Promise.resolve(cached);
-    }
+    if (cached) return Promise.resolve(cached);
 
     const running = inflight.get(videoId);
-
-    if (running) {
-        return running;
-    }
+    if (running) return running;
 
     const job = fetchAudio(videoId, query, seconds)
         .then((audio) => {
@@ -538,7 +298,6 @@ function getAudio(
         .finally(() => inflight.delete(videoId));
 
     inflight.set(videoId, job);
-
     return job;
 }
 
@@ -549,68 +308,39 @@ async function getValidAudio(
     first: Promise<AudioResult>
 ) {
     let audio = await first;
-
-    const enough = (a: AudioResult) =>
-        !seconds || a.buffer.length >= seconds * BYTES_PER_SECOND_MIN;
+    const enough = (a: AudioResult) => !seconds || a.buffer.length >= seconds * BYTES_PER_SECOND_MIN;
 
     if (!enough(audio)) {
-        console.error(
-            `[PLAY] Audio corto: ${audio.buffer.length} bytes para ${seconds} s. Reintentando...`
-        );
-
+        console.error(`[PLAY] Audio corto: ${audio.buffer.length} bytes para ${seconds} s. Reintentando...`);
         audioCache.delete(videoId);
-
-        audio = await getAudio(
-            videoId,
-            query,
-            seconds
-        );
-
+        audio = await getAudio(videoId, query, seconds);
         if (!enough(audio)) {
             audioCache.delete(videoId);
             throw new Error('Ninguna API entrego el audio completo');
         }
     }
-
     return audio;
 }
 
 async function findVideo(text: string) {
     const id = getVideoId(text);
-    const key = id
-        ? `id:${id}`
-        : `q:${text.toLowerCase()}`;
+    const key = id ? `id:${id}` : `q:${text.toLowerCase()}`;
 
     const cached = searchCache.get(key);
-
-    if (cached) {
-        return cached;
-    }
+    if (cached) return cached;
 
     let video: any = null;
-
     if (id) {
-        video = await ytsearch({
-            videoId: id
-        });
+        video = await ytsearch({ videoId: id });
     } else {
         const result = await ytsearch(text);
         video = result.videos?.[0] || null;
     }
-
-    if (video) {
-        searchCache.set(key, video);
-    }
-
+    if (video) searchCache.set(key, video);
     return video;
 }
 
-export default async function (
-    sock: any,
-    msg: any,
-    extra: any,
-    db: any
-) {
+export default async function (sock: any, msg: any, extra: any, db: any) {
     const text = extra.args.join(' ').trim();
 
     if (!text) {
@@ -623,35 +353,21 @@ export default async function (
 
     try {
         const urlId = getVideoId(text);
-        const early = urlId
-            ? getAudio(urlId, text)
-            : null;
-
+        const early = urlId ? getAudio(urlId, text) : null;
         early?.catch(() => {});
 
         const video = await findVideo(text);
 
         if (!video?.videoId) {
-            return msg.reply(
-                `🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`
-            );
+            return msg.reply(`🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`);
         }
 
-        const audioPromise =
-            early ||
-            getAudio(
-                video.videoId,
-                text,
-                video.seconds
-            );
-
+        const audioPromise = early || getAudio(video.videoId, text, video.seconds);
         audioPromise.catch(() => {});
 
         const title = video.title || 'YouTube Audio';
-        const channel =
-            video.author?.name || 'Desconocido';
-        const imageUrl =
-            video.thumbnail || video.image || null;
+        const channel = video.author?.name || 'Desconocido';
+        const imageUrl = video.thumbnail || video.image || null;
 
         const infoText =
             `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
@@ -670,15 +386,8 @@ export default async function (
             if (imageUrl) {
                 await sock.sendMessage(
                     msg.from,
-                    {
-                        image: {
-                            url: imageUrl
-                        },
-                        caption: infoText
-                    },
-                    {
-                        quoted: msg
-                    }
+                    { image: { url: imageUrl }, caption: infoText },
+                    { quoted: msg }
                 );
             } else {
                 await msg.reply(infoText);
@@ -687,12 +396,7 @@ export default async function (
             await msg.reply(infoText).catch(() => {});
         }
 
-        const audio = await getValidAudio(
-            video.videoId,
-            text,
-            video.seconds,
-            audioPromise
-        );
+        const audio = await getValidAudio(video.videoId, text, video.seconds, audioPromise);
 
         await sock.sendMessage(
             msg.from,
@@ -702,18 +406,10 @@ export default async function (
                 fileName: `${cleanTitle(title)}.${audio.ext}`,
                 ptt: false
             },
-            {
-                quoted: msg
-            }
+            { quoted: msg }
         );
     } catch (error: any) {
-        console.error(
-            '[PLAY] Fallo total:',
-            error?.message || error
-        );
-
-        await msg.reply(
-            `⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`
-        );
+        console.error('[PLAY] Fallo total:', error?.message || error);
+        await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`);
     }
 }
