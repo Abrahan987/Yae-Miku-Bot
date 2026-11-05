@@ -8,7 +8,9 @@ import { isAntilinkEnabled, containsLink, containsWhatsappLink } from './src/lib
 import { getWelcomeConfig, type WelcomeKind } from './src/lib/welcome.ts';
 import { handleGachaAccept, touchUser } from './src/lib/gacha.ts';
 import { LRUCache } from 'lru-cache';
+import { runWithBot, installBotIdentity } from './src/lib/botcontext.ts';
 
+installBotIdentity();
 loadPlugins().catch(() => {});
 watchPlugins();
 
@@ -219,7 +221,10 @@ function isConfiguredOwner(...senders: string[]): boolean {
 }
 
 export function handler(sock: WASocket) {
-    sock.ev.on('group-participants.update', async (update: any) => {
+    const on = (name: string, fn: (...args: any[]) => any) =>
+        (sock.ev as any).on(name, (...args: any[]) => runWithBot(sock, () => fn(...args)));
+
+    on('group-participants.update', async (update: any) => {
         try {
             const chatId: string = update?.id || '';
             const action: string = update?.action || '';
@@ -279,7 +284,7 @@ export function handler(sock: WASocket) {
         }
     });
 
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify' || !Array.isArray(messages)) return;
         for (const rawMsg of messages) {
             try {
