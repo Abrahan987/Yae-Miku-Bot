@@ -1,13 +1,14 @@
 import './config.ts';
 import type { WASocket } from '@whiskeysockets/baileys';
 import { serialize, UserJid, decodeJid, rememberParticipants, learnLid } from '#simple';
-import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageCount } from '#db';
+import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageCount, getSetting } from '#db';
 import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
 import { isAntilinkEnabled, containsLink, containsWhatsappLink } from './src/lib/antilink.ts';
 import { getWelcomeConfig, type WelcomeKind } from './src/lib/welcome.ts';
 import { handleGachaAccept, touchUser } from './src/lib/gacha.ts';
 import { LRUCache } from 'lru-cache';
+import { isOwner as isOwnerPerm } from './src/lib/perms.ts';
 import { runWithBot, installBotIdentity } from './src/lib/botcontext.ts';
 
 installBotIdentity();
@@ -390,7 +391,13 @@ export function handler(sock: WASocket) {
                 const reqAdmin = Boolean(plugin.admin);
                 const reqBotAdmin = Boolean(plugin.botAdmin);
                 const reqOwner = Boolean(plugin.owner);
-                const owner = (rawMsg?.key?.fromMe && !(sock as any).subbotPhone) || isConfiguredOwner(msg.sender, rawMsg?.key?.participant || '', rawMsg?.key?.participantPn || '');
+                const owner = isOwnerPerm(sock, msg, rawMsg) || isConfiguredOwner(msg.sender, rawMsg?.key?.participant || '', rawMsg?.key?.participantPn || '');
+
+                if (msg.isGroup && !owner && !isAdmin) {
+                    let adminOnly = false;
+                    try { adminOnly = getSetting(`onlyadmin:${msg.from}`) === '1'; } catch {}
+                    if (adminOnly) continue;
+                }
 
                 if (reqOwner && !owner) {
                     await msg.reply(yae('𝙰𝙲𝙲𝙴𝚂𝙾 𝙳𝙴𝙽𝙴𝙶𝙰𝙳𝙾', 'Este comando solo puede ser usado por el *owner* del bot.'));

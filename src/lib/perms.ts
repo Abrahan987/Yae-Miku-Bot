@@ -19,10 +19,11 @@ export function isOwner(sock: any, msg: any, rawMsg?: any): boolean {
 
     let resolved = msg.sender;
     try {
-        if (msg.isGroup) resolved = UserJid(sock, msg.from, msg.sender) || msg.sender;
+        resolved = UserJid(sock, msg.from, msg.sender) || msg.sender;
     } catch {}
 
-    const nums = [resolved, msg.sender]
+    const key = rawMsg?.key || {};
+    const nums = [resolved, msg.sender, key.participant, key.participantPn, key.participantAlt, key.remoteJidAlt]
         .map(norm)
         .filter(Boolean)
         .flatMap((n) => [n, strip(n)]);
