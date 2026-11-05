@@ -17,7 +17,8 @@ export default async function (sock: any, msg: any, extra: any) {
         return msg.reply(
             `💰 *SALDO DE YEN*\n\n` +
             `🪷 Usuario: *${displayName}*\n` +
-            `💵 Dinero: *¥${(user.yen || 0).toLocaleString()}*`
+            `💵 Dinero: *¥${(user.yen || 0).toLocaleString()}*\n` +
+            `🏦 Banco: *¥${(user.bank || 0).toLocaleString()}*`
         );
     } catch (error: any) {
         console.error('[BALANCE ERROR]:', error);

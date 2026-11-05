@@ -38,6 +38,16 @@ export function rememberParticipants(participants: any[]): void {
     }
 }
 
+export function learnLid(a: any, b: any): void {
+    const ids = [a, b].filter((x) => typeof x === 'string') as string[];
+    const pn = ids.find((x) => x.endsWith('@s.whatsapp.net'));
+    if (!pn) return;
+    for (const x of ids) {
+        const m = x.match(/^([^@:]+)(?::\d+)?@lid$/);
+        if (m) setLidCache(m[1], decodeJid(pn));
+    }
+}
+
 export const decodeJid = (jid: any): string => {
     if (!jid || typeof jid !== 'string') return '';
     if (jid.includes(':')) {

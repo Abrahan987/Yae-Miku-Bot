@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
+import { lidCache, decodeJid, UserJid } from './simple.ts';
 
 const dbPath = path.resolve(process.cwd(), 'database.sqlite');
 const db = new DatabaseSync(dbPath);
@@ -12,7 +13,9 @@ export async function loadDB() {
             jid TEXT PRIMARY KEY,
             name TEXT DEFAULT '',
             yen INTEGER DEFAULT 0,
-            banned INTEGER DEFAULT 0
+            banned INTEGER DEFAULT 0,
+            bank INTEGER DEFAULT 0,
+            lid TEXT DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS groups (
@@ -69,21 +72,120 @@ export async function loadDB() {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     `);
+
+    migrateUsers();
+}
+
+const LID_RE = /^([^@:]+)(?::\d+)?@lid$/;
+const USER_TABLES = ['warnings', 'message_stats', 'economy_cooldowns', 'gacha_claims', 'gacha_users', 'gacha_profile'];
+
+function migrateUsers(): void {
+    const cols = (db.prepare('PRAGMA table_info(users)').all() as any[]).map((c) => c.name);
+    if (!cols.includes('bank')) db.exec('ALTER TABLE users ADD COLUMN bank INTEGER DEFAULT 0');
+    if (!cols.includes('lid')) db.exec("ALTER TABLE users ADD COLUMN lid TEXT DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS idx_users_lid ON users (lid)');
+
+    const lidRows = db.prepare("SELECT jid FROM users WHERE jid LIKE '%@lid'").all() as any[];
+    for (const row of lidRows) {
+        try {
+            const id = resolveUserIdentity(row.jid);
+            if (id.jid !== row.jid) absorbUser(row.jid, id.jid, id.lid);
+        } catch (error) {
+            console.error('[USERS MIGRATE]', row.jid, error);
+        }
+    }
+}
+
+function reverseLid(phoneJid: string): string {
+    for (const [lid, pn] of lidCache) {
+        if (pn === phoneJid) return `${lid}@lid`;
+    }
+    return '';
+}
+
+export function resolveUserIdentity(jid: string): { jid: string; lid: string } {
+    const clean = decodeJid(String(jid || ''));
+    const m = clean.match(LID_RE);
+
+    if (m) {
+        const lid = `${m[1]}@lid`;
+        let phone = '';
+        try { phone = UserJid(null, '', lid); } catch {}
+        if (phone.endsWith('@s.whatsapp.net')) return { jid: phone, lid };
+
+        const row = db.prepare("SELECT jid FROM users WHERE lid = ? ORDER BY jid LIKE '%@lid' LIMIT 1").get(lid) as any;
+        return { jid: row?.jid || lid, lid };
+    }
+
+    return { jid: clean, lid: '' };
+}
+
+function absorbUser(from: string, to: string, lid: string): void {
+    if (from === to) return;
+    const src = db.prepare('SELECT * FROM users WHERE jid = ?').get(from) as any;
+    if (!src) return;
+    const dst = db.prepare('SELECT * FROM users WHERE jid = ?').get(to) as any;
+
+    db.exec('SAVEPOINT absorb_user');
+    try {
+        if (!dst) {
+            db.prepare('INSERT INTO users (jid, name, yen, bank, banned, lid) VALUES (?, ?, ?, ?, ?, ?)')
+                .run(to, src.name || '', src.yen || 0, src.bank || 0, src.banned || 0, lid || src.lid || '');
+        } else {
+            db.prepare('UPDATE users SET name = ?, yen = ?, bank = ?, banned = ?, lid = ? WHERE jid = ?').run(
+                dst.name || src.name || '',
+                (dst.yen || 0) + (src.yen || 0),
+                (dst.bank || 0) + (src.bank || 0),
+                Math.max(dst.banned || 0, src.banned || 0),
+                dst.lid || lid || src.lid || '',
+                to
+            );
+        }
+        db.prepare('DELETE FROM users WHERE jid = ?').run(from);
+
+        for (const table of USER_TABLES) {
+            try {
+                if (table === 'message_stats') {
+                    const rows = db.prepare('SELECT groupJid, message_count FROM message_stats WHERE userJid = ?').all(from) as any[];
+                    for (const r of rows) {
+                        db.prepare(`
+                            INSERT INTO message_stats (groupJid, userJid, message_count) VALUES (?, ?, ?)
+                            ON CONFLICT(groupJid, userJid) DO UPDATE SET message_count = message_count + excluded.message_count
+                        `).run(r.groupJid, to, r.message_count || 0);
+                    }
+                    db.prepare('DELETE FROM message_stats WHERE userJid = ?').run(from);
+                    continue;
+                }
+                db.prepare(`UPDATE OR IGNORE ${table} SET userJid = ? WHERE userJid = ?`).run(to, from);
+                db.prepare(`DELETE FROM ${table} WHERE userJid = ?`).run(from);
+            } catch {}
+        }
+
+        db.exec('RELEASE absorb_user');
+    } catch (error) {
+        db.exec('ROLLBACK TO absorb_user');
+        db.exec('RELEASE absorb_user');
+        throw error;
+    }
 }
 
 export function getUser(jid: string) {
-    const stmt = db.prepare('SELECT * FROM users WHERE jid = ?');
-    let user = stmt.get(jid) as any;
+    const id = resolveUserIdentity(jid);
+    const select = db.prepare('SELECT * FROM users WHERE jid = ?');
+
+    if (id.lid && id.lid !== id.jid && select.get(id.lid)) {
+        try { absorbUser(id.lid, id.jid, id.lid); } catch (error) { console.error('[USER MERGE]', id.lid, error); }
+    }
+
+    let user = select.get(id.jid) as any;
+    const lid = id.lid || (id.jid.endsWith('@s.whatsapp.net') && !user?.lid ? reverseLid(id.jid) : '');
 
     if (!user) {
-        db.prepare('INSERT INTO users (jid) VALUES (?)').run(jid);
-
-        user = {
-            jid,
-            name: '',
-            yen: 0,
-            banned: 0
-        };
+        db.prepare('INSERT INTO users (jid, lid) VALUES (?, ?)').run(id.jid, lid);
+        user = { jid: id.jid, name: '', yen: 0, banned: 0, bank: 0, lid };
+    } else if (lid && !user.lid) {
+        db.prepare('UPDATE users SET lid = ? WHERE jid = ?').run(lid, id.jid);
+        user.lid = lid;
     }
 
     return user;
@@ -94,7 +196,9 @@ export function updateUser(
     data: Partial<{
         name: string;
         yen: number;
+        bank: number;
         banned: number;
+        lid: string;
     }>
 ) {
     const user = getUser(jid);
@@ -102,13 +206,15 @@ export function updateUser(
 
     db.prepare(`
         UPDATE users
-        SET name = ?, yen = ?, banned = ?
+        SET name = ?, yen = ?, bank = ?, banned = ?, lid = ?
         WHERE jid = ?
     `).run(
-        updated.name,
-        updated.yen,
-        updated.banned,
-        jid
+        updated.name || '',
+        updated.yen || 0,
+        updated.bank || 0,
+        updated.banned || 0,
+        updated.lid || '',
+        user.jid
     );
 
     return updated;

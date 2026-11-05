@@ -36,7 +36,7 @@ export default async function (sock: any, msg: any, extra: any) {
         }
 
         const user = getUser(sender);
-        const bankBalance = user.bank_balance || 0;
+        const bankBalance = user.bank || 0;
         let amountToWithdraw = 0;
 
         if (args[0].toLowerCase() === 'all') {
@@ -60,8 +60,7 @@ export default async function (sock: any, msg: any, extra: any) {
         const newBankBalance = bankBalance - amountToWithdraw;
         const newHandBalance = (user.yen || 0) + amountToWithdraw;
 
-        // Nota: Necesitas agregar campo 'bank_balance' a la tabla users
-        updateUser(sender, { name: user.name, yen: newHandBalance, banned: user.banned });
+        updateUser(sender, { yen: newHandBalance, bank: newBankBalance });
 
         return msg.reply(
             `✅ *RETIRO EXITOSO*\n\n` +

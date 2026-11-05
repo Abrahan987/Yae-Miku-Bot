@@ -1,6 +1,6 @@
 import './config.ts';
 import type { WASocket } from '@whiskeysockets/baileys';
-import { serialize, UserJid, decodeJid, rememberParticipants } from '#simple';
+import { serialize, UserJid, decodeJid, rememberParticipants, learnLid } from '#simple';
 import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageCount } from '#db';
 import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
@@ -220,6 +220,31 @@ function isConfiguredOwner(...senders: string[]): boolean {
     });
 }
 
+const lidMisses = new Map<string, number>();
+
+async function learnSenderIdentity(sock: any, rawMsg: any): Promise<void> {
+    try {
+        const key = rawMsg?.key || {};
+        learnLid(key.participant, key.participantAlt);
+        learnLid(key.remoteJid, key.remoteJidAlt);
+
+        const chatId: string = key.remoteJid || '';
+        const participant: string = key.participant || '';
+        if (!chatId.endsWith('@g.us') || !participant.endsWith('@lid')) return;
+
+        const resolved = UserJid(sock, chatId, participant);
+        if (resolved.endsWith('@s.whatsapp.net')) return;
+
+        const last = lidMisses.get(participant) || 0;
+        if (Date.now() - last < 60000) return;
+        lidMisses.set(participant, Date.now());
+        if (lidMisses.size > 2000) lidMisses.delete(lidMisses.keys().next().value as string);
+
+        const metadata = await sock.groupMetadata(chatId);
+        rememberParticipants(metadata?.participants || []);
+    } catch {}
+}
+
 export function handler(sock: WASocket) {
     const on = (name: string, fn: (...args: any[]) => any) =>
         (sock.ev as any).on(name, (...args: any[]) => runWithBot(sock, () => fn(...args)));
@@ -297,6 +322,7 @@ export function handler(sock: WASocket) {
                 }
                 if (isDuplicate(`${normalizeNumber(sock.user?.id || '')}:${msgId}`)) continue;
 
+                await learnSenderIdentity(sock, rawMsg);
                 const msg = serialize(sock, rawMsg);
                 if (msg?.isGroup && !rawMsg.key.fromMe) countMessage(msg.from, msg.sender, msgId);
                 if (!msg?.body) continue;

@@ -58,12 +58,14 @@ export default async function (sock: any, msg: any, extra: any) {
         }
 
         const newBalance = currentBalance - amountToDeposit;
-        updateUser(sender, { name: user.name, yen: newBalance, banned: user.banned });
+        const newBank = (user.bank || 0) + amountToDeposit;
+        updateUser(sender, { yen: newBalance, bank: newBank });
 
         return msg.reply(
             `✅ *DEPÓSITO EXITOSO*\n\n` +
             `🏦 Dinero depositado: *+¥${amountToDeposit.toLocaleString()}*\n` +
-            `💰 Dinero en mano: *¥${newBalance.toLocaleString()}*\n\n` +
+            `💰 Dinero en mano: *¥${newBalance.toLocaleString()}*\n` +
+            `🏦 Saldo en banco: *¥${newBank.toLocaleString()}*\n\n` +
             `🔒 Tu dinero está seguro en el banco.`
         );
     } catch (error: any) {
