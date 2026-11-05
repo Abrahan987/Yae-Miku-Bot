@@ -1,3 +1,4 @@
+import { setSetting, deleteSetting } from '../lib/database.ts';
 import { isOwner, deco, warn } from '../lib/perms.ts';
 
 export const command = ['setprefix', 'setbotprefix'];
@@ -31,10 +32,13 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
     }
 
     if (value.toLowerCase() === 'reset') {
+        deleteSetting('prefix');
+        deleteSetting('noprefix');
         (global as any).prefix = [...DEFAULT_PREFIX];
+        (global as any).noPrefix = false;
         return sock.sendMessage(
             msg.from,
-            { text: deco('𝚂𝙴𝚃𝙿𝚁𝙴𝙵𝙸𝚇', `🪷 Prefijos restaurados: *${DEFAULT_PREFIX.join(' ')}*`) },
+            { text: deco('𝚂𝙴𝚃𝙿𝚁𝙴𝙵𝙸𝚇', `🪷 Prefijos restaurados (modo sin prefijo desactivado): *${DEFAULT_PREFIX.join(' ')}*`) },
             { quoted: msg }
         );
     }
@@ -62,11 +66,12 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
         );
     }
 
+    setSetting('prefix', JSON.stringify(list));
     (global as any).prefix = list;
 
     return sock.sendMessage(
         msg.from,
-        { text: deco('𝚂𝙴𝚃𝙿𝚁𝙴𝙵𝙸𝚇', `🪷 Prefijos actualizados a: *${list.join(' ')}*\n> Se mantienen hasta que el bot se reinicie. Para hacerlo permanente cámbialo en config.ts.`) },
+        { text: deco('𝚂𝙴𝚃𝙿𝚁𝙴𝙵𝙸𝚇', `🪷 Prefijos actualizados a: *${list.join(' ')}*\n> Guardado permanentemente. Solo se restablece con ${p}setprefix reset.`) },
         { quoted: msg }
     );
 }

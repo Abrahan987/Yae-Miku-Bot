@@ -30,6 +30,11 @@ export async function loadDB() {
             message TEXT DEFAULT ''
         );
 
+        CREATE TABLE IF NOT EXISTS bot_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT DEFAULT ''
+        );
+
         CREATE TABLE IF NOT EXISTS bot_stats (
             key TEXT PRIMARY KEY,
             value INTEGER DEFAULT 0
@@ -74,10 +79,35 @@ export async function loadDB() {
     `);
 
     migrateUsers();
+    applyPrefixSettings();
 }
 
 const LID_RE = /^([^@:]+)(?::\d+)?@lid$/;
 const USER_TABLES = ['warnings', 'message_stats', 'economy_cooldowns', 'gacha_claims', 'gacha_users', 'gacha_profile'];
+
+export function getSetting(key: string): string | null {
+    const row = db.prepare('SELECT value FROM bot_settings WHERE key = ?').get(key) as any;
+    return row ? String(row.value) : null;
+}
+
+export function setSetting(key: string, value: string): void {
+    db.prepare('INSERT INTO bot_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+}
+
+export function deleteSetting(key: string): void {
+    db.prepare('DELETE FROM bot_settings WHERE key = ?').run(key);
+}
+
+export function applyPrefixSettings(): void {
+    const saved = getSetting('prefix');
+    if (saved) {
+        try {
+            const list = JSON.parse(saved);
+            if (Array.isArray(list) && list.length) (global as any).prefix = list;
+        } catch {}
+    }
+    (global as any).noPrefix = getSetting('noprefix') === '1';
+}
 
 function migrateUsers(): void {
     const cols = (db.prepare('PRAGMA table_info(users)').all() as any[]).map((c) => c.name);

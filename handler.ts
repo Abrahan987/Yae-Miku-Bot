@@ -202,7 +202,7 @@ function extractCommandInfo(text: string): { cleanCmd: string; usedPrefix: strin
     } else if (typeof prefixes === 'string' && text.startsWith(prefixes)) {
         usedPrefix = prefixes;
     }
-    if (!usedPrefix) return null;
+    if (!usedPrefix && !(global as any).noPrefix) return null;
     let start = usedPrefix.length;
     while (start < text.length && text.charCodeAt(start) === 32) start++;
     let end = text.indexOf(' ', start);
