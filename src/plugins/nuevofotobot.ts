@@ -1,4 +1,7 @@
 import { isOwner, deco, warn } from '../lib/perms.ts';
+import { getImageFromMessage, isHttpUrl } from '../lib/subbot_config.ts';
+import fs from 'fs';
+import path from 'path';
 
 export const command = ['nuevofotobot', 'setfotobot', 'setbannerbot'];
 export const category = 'owner';
@@ -7,30 +10,16 @@ export const owner = true;
 export const admin = false;
 export const botAdmin = false;
 
-function isValidUrl(url: string): boolean {
-    try {
-        new URL(url);
-        return url.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i) !== null;
-    } catch {
-        return false;
-    }
-}
-
 export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {
     if (!isOwner(sock, msg, rawMsg)) {
         return sock.sendMessage(msg.from, { text: warn.owner() }, { quoted: msg });
     }
 
     const p = (global as any).prefix?.[0] || '.';
-    let bannerUrl: string = '';
+    const bannerUrl = (extra?.args || []).join(' ').trim();
+    const image = bannerUrl ? null : await getImageFromMessage(msg);
 
-    if ((extra?.args || []).length > 0) {
-        bannerUrl = (extra?.args || []).join(' ').trim();
-    } else if (msg.quoted?.imageMessage) {
-        bannerUrl = msg.quoted?.download?.() || '';
-    }
-
-    if (!bannerUrl && (extra?.args || []).length === 0 && !msg.quoted?.imageMessage) {
+    if (!bannerUrl && !image) {
         return sock.sendMessage(
             msg.from,
             {
@@ -47,36 +36,24 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
         );
     }
 
-    if (!bannerUrl) {
+    let value = bannerUrl;
+
+    if (image) {
+        const dir = path.join(process.cwd(), 'banners');
+        fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, 'main.jpg');
+        fs.writeFileSync(file, image);
+        value = file;
+    } else if (!isHttpUrl(bannerUrl) || bannerUrl.length > 500) {
         return sock.sendMessage(
             msg.from,
-            { text: deco('𝗕𝗔𝗡𝗡𝗘𝗥 𝗘𝗥𝗢𝗥', '⚠️ No se proporcionó URL válida ni imagen.') },
+            { text: deco('𝗕𝗔𝗡𝗡𝗘𝗥 𝗘𝗥𝗥𝗢𝗥', '⚠️ La URL no es válida. Debe empezar con http:// o https://') },
             { quoted: msg }
         );
     }
 
-    if (!isValidUrl(bannerUrl)) {
-        return sock.sendMessage(
-            msg.from,
-            {
-                text: deco(
-                    '𝗕𝗔𝗡𝗡𝗘𝗥 𝗘𝗥𝗢𝗥',
-                    '⚠️ La URL no es válida. Debe ser una URL de imagen (jpg, png, gif, webp, bmp).'
-                )
-            },
-            { quoted: msg }
-        );
-    }
-
-    if (bannerUrl.length > 500) {
-        return sock.sendMessage(
-            msg.from,
-            { text: deco('𝗕𝗔𝗡𝗡𝗘𝗥 𝗘𝗥𝗢𝗥', '⚠️ La URL del banner es muy larga.') },
-            { quoted: msg }
-        );
-    }
-
-    (global as any).bannerbot = bannerUrl;
+    (global as any).icono = value;
+    (global as any).banner = value;
 
     return sock.sendMessage(
         msg.from,
@@ -84,8 +61,8 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
             text:
                 `${(global as any).namebot}\n\n` +
                 `🍓͜ᩧ𑂳ᰍ  𝗕𝗔𝗡𝗡𝗘𝗥 𝗔𝗖𝗧𝗨𝗔𝗟𝗜𝗭𝗔𝗗𝗢\n\n` +
-                `🪷 El banner del bot ha sido actualizado.\n` +
-                `📌 Este cambio se mantiene hasta que el bot se reinicie.\n\n` +
+                `🪷 El banner del bot principal ha sido actualizado y ya se aplica en el menú.\n` +
+                `📌 Se mantiene hasta que el bot se reinicie.\n\n` +
                 `ꨄ︎ ${(global as any).nmcreador}`
         },
         { quoted: msg }

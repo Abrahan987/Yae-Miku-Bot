@@ -4,7 +4,7 @@ import { deco, isOwner, warn } from '../lib/perms.ts';
 export const command = [
     'bots', 'sockets',
     'setusername', 'setpfp', 'setimage',
-    'setbanner', 'setbotbanner', 'seticon', 'setboticon',
+    'setbotbanner', 'seticon', 'setboticon',
     'setlink', 'setbotlink', 'setchannel', 'setbotchannel',
     'setcurrency', 'setbotcurrency', 'setowner', 'setbotowner'
 ];

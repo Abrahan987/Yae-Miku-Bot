@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { UserJid } from '#simple';
 import { isOwner } from './perms.ts';
 import { getSubBotConfig as getSubBotConfigDB, setSubBotConfig as setSubBotConfigDB, updateSubBotName as updateSubBotNameDB, updateSubBotBanner as updateSubBotBannerDB } from './database.ts';
@@ -140,3 +142,56 @@ export function getSubBotConfiguration(phone: string) {
     }
 }
 
+
+const bannersDir = path.join(process.cwd(), 'banners');
+
+export function setSubBotBannerImage(phone: string, buffer: Buffer) {
+    const normalized = normalizePhone(phone);
+    if (!getSubBotConfigDB(normalized)) throw new Error('Configuración de subbot no encontrada');
+    fs.mkdirSync(bannersDir, { recursive: true });
+    const file = path.join(bannersDir, `${normalized}.jpg`);
+    fs.writeFileSync(file, buffer);
+    return updateSubBotBannerDB(normalized, `file:${file}`);
+}
+
+export function getBotPhone(sock: any): string {
+    return sock?.subbotPhone ? normalizePhone(sock.subbotPhone) : '';
+}
+
+export function resolveBotName(sock: any, fallback: string): string {
+    const phone = getBotPhone(sock);
+    if (!phone) return fallback;
+    return getSubBotName(phone) || fallback;
+}
+
+export function resolveBotBanner(sock: any, fallback: string | undefined): { url?: string; buffer?: Buffer } | null {
+    const phone = getBotPhone(sock);
+    const banner = phone ? getSubBotBanner(phone) : null;
+    if (banner) {
+        if (banner.startsWith('file:')) {
+            try {
+                return { buffer: fs.readFileSync(banner.slice(5)) };
+            } catch {}
+        } else {
+            return { url: banner };
+        }
+    }
+    return fallback ? { url: fallback } : null;
+}
+
+export async function getImageFromMessage(msg: any): Promise<Buffer | null> {
+    try {
+        if (msg?.type === 'imageMessage') return (await msg.download()) || null;
+        if (msg?.quoted?.type === 'imageMessage') return (await msg.quoted.download()) || null;
+    } catch {}
+    return null;
+}
+
+export function isHttpUrl(url: string): boolean {
+    try {
+        const u = new URL(url);
+        return u.protocol === 'http:' || u.protocol === 'https:';
+    } catch {
+        return false;
+    }
+}

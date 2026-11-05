@@ -1,5 +1,5 @@
 import { getActiveBots } from '../lib/subbot.ts';
-import { isSubBotOwner, setSubBotBanner } from '../lib/subbot_config.ts';
+import { isSubBotOwner, setSubBotBanner, setSubBotBannerImage, getImageFromMessage, isHttpUrl } from '../lib/subbot_config.ts';
 
 const normalizePhone = (input: string): string => {
     let s = String(input).replace(/\D/g, '');
@@ -17,15 +17,6 @@ export const description = 'Cambia el banner de tu subbot vinculado.';
 export const admin = false;
 export const botAdmin = false;
 
-function isValidUrl(url: string): boolean {
-    try {
-        new URL(url);
-        return url.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i) !== null;
-    } catch {
-        return false;
-    }
-}
-
 export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {
     const subs = Array.from(getActiveBots().values());
 
@@ -34,15 +25,10 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
     }
 
     const p = (global as any).prefix?.[0] || '.';
-    let bannerUrl: string = '';
+    const bannerUrl = (extra?.args || []).join(' ').trim();
+    const image = bannerUrl ? null : await getImageFromMessage(msg);
 
-    if ((extra?.args || []).length > 0) {
-        bannerUrl = (extra?.args || []).join(' ').trim();
-    } else if (msg.quoted?.imageMessage) {
-        bannerUrl = msg.quoted?.download?.() || '';
-    }
-
-    if (!bannerUrl && (extra?.args || []).length === 0 && !msg.quoted?.imageMessage) {
+    if (!bannerUrl && !image) {
         return sock.sendMessage(
             msg.from,
             {
@@ -57,10 +43,6 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
             },
             { quoted: msg }
         );
-    }
-
-    if (!bannerUrl) {
-        return msg.reply('⚠️ No se proporcionó URL válida ni imagen.');
     }
 
     try {
@@ -86,15 +68,17 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
             );
         }
 
-        if (!isValidUrl(bannerUrl)) {
-            return msg.reply('⚠️ La URL no es válida. Debe ser una URL de imagen (jpg, png, gif, webp, bmp).');
+        if (image) {
+            setSubBotBannerImage(botPhone, image);
+        } else {
+            if (!isHttpUrl(bannerUrl)) {
+                return msg.reply('⚠️ La URL no es válida. Debe empezar con http:// o https://');
+            }
+            if (bannerUrl.length > 500) {
+                return msg.reply('⚠️ La URL del banner es muy larga.');
+            }
+            setSubBotBanner(botPhone, bannerUrl);
         }
-
-        if (bannerUrl.length > 500) {
-            return msg.reply('⚠️ La URL del banner es muy larga.');
-        }
-
-        setSubBotBanner(botPhone, bannerUrl);
 
         return sock.sendMessage(
             msg.from,
@@ -103,7 +87,7 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
                     `${(global as any).namebot}\n\n` +
                     `🍓͜ᩧ𑂳ᰍ  𝗖𝗔𝗠𝗕𝗜𝗔𝗗𝗢\n\n` +
                     `🪷 Banner de tu subbot actualizado.\n` +
-                    `📌 Este cambio se ha guardado permanentemente.\n\n` +
+                    `📌 Ya se aplica en el menú, sin reiniciar.\n\n` +
                     `ꨄ︎ ${(global as any).nmcreador}`
             },
             { quoted: msg }

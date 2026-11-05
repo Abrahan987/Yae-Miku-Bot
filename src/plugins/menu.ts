@@ -1,3 +1,5 @@
+import { resolveBotName, resolveBotBanner } from '../lib/subbot_config.ts';
+
 export const command = ['menu', 'help', 'comandos'];
 export const category = 'info';
 export const description = 'Muestra el menú principal con todos los comandos.';
@@ -117,7 +119,7 @@ export default async function (sock: any, msg: any, extra: any) {
     }
 
     const categoriesContent = blocks.join('\n\n');
-    const botName = global.namebot || 'YAE MIKU BOT';
+    const botName = resolveBotName(sock, global.namebot || 'YAE MIKU BOT');
 
     const menuText = `ᅟㅤ 𓈒   ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
 
@@ -148,24 +150,21 @@ ${categoriesContent}
         }
     };
 
-    if (global.icono) {
-        await sock.sendMessage(
-            remoteJid,
-            {
-                image: {
-                    url: global.icono
-                },
-                caption: menuText,
-                contextInfo
+    const banner = resolveBotBanner(sock, global.icono);
+
+    if (banner) {
+        const image = banner.buffer ? banner.buffer : { url: banner.url as string };
+        try {
+            return await sock.sendMessage(remoteJid, { image, caption: menuText, contextInfo });
+        } catch (error) {
+            console.error('[MENU BANNER ERROR]:', error);
+            if (banner.url !== global.icono && global.icono) {
+                try {
+                    return await sock.sendMessage(remoteJid, { image: { url: global.icono }, caption: menuText, contextInfo });
+                } catch {}
             }
-        );
-    } else {
-        await sock.sendMessage(
-            remoteJid,
-            {
-                text: menuText,
-                contextInfo
-            }
-        );
+        }
     }
+
+    await sock.sendMessage(remoteJid, { text: menuText, contextInfo });
 }

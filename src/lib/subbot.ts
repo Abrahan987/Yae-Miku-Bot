@@ -11,7 +11,7 @@ import makeWASocket, {
 import qrcode from 'qrcode';
 import { handler } from '#handler';
 import { commandMap } from '#loader';
-import { initializeSubBotConfig, getSubBotName, getSubBotBanner } from './subbot_config.ts';
+import { initializeSubBotConfig } from './subbot_config.ts';
 
 const subsDir = path.join(process.cwd(), 'subs');
 if (!fs.existsSync(subsDir)) fs.mkdirSync(subsDir, { recursive: true });
@@ -96,6 +96,7 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
             generateHighQualityLinkPreview: false,
             getMessage: async () => undefined
         });
+        sock.subbotPhone = phone;
 
         sock.ev.on('creds.update', saveCreds);
 
@@ -176,18 +177,6 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
                 try {
                     const ownerJid = mainMsg?.key?.participant || mainMsg?.sender || mainMsg?.from || '';
                     initializeSubBotConfig(phone, ownerJid);
-
-                    const customName = getSubBotName(phone);
-                    if (customName) {
-                        (sock as any).customName = customName;
-                        console.log(`[SUBBOT CONFIG] Nombre personalizado cargado: ${customName}`);
-                    }
-
-                    const customBanner = getSubBotBanner(phone);
-                    if (customBanner) {
-                        (sock as any).customBanner = customBanner;
-                        console.log(`[SUBBOT CONFIG] Banner personalizado cargado`);
-                    }
                 } catch (error) {
                     console.error(`[SUBBOT CONFIG ERROR]`, error);
                 }
