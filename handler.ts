@@ -5,11 +5,12 @@ import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageC
 import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
 import { isAntilinkEnabled, containsLink, containsWhatsappLink } from './src/lib/antilink.ts';
-import { getWelcomeConfig, type WelcomeKind } from './src/lib/welcome.ts';
+import { getWelcomeConfig, sendWelcome, type WelcomeKind } from './src/lib/welcome.ts';
 import { handleGachaAccept, touchUser } from './src/lib/gacha.ts';
 import { LRUCache } from 'lru-cache';
 import { isOwner as isOwnerPerm } from './src/lib/perms.ts';
 import { runWithBot, installBotIdentity } from './src/lib/botcontext.ts';
+import { isPrivateModeEnabled } from './src/lib/private_mode.ts';
 
 installBotIdentity();
 loadPlugins().catch(() => {});
@@ -266,13 +267,14 @@ export function handler(sock: WASocket) {
             const config = getWelcomeConfig(chatId, kind);
             if (!config.enabled) return;
 
+            rememberParticipants(update.participants || []);
             const ids: string[] = (update.participants || [])
                 .map((p: any) => (typeof p === 'string' ? p : p?.id || ''))
                 .filter(Boolean);
             if (!ids.length) return;
 
-            const botNums = [sock.user?.id || '', (sock.user as any)?.lid || '']
-                .map(normalizeNumber)
+            const botIds = [sock.user?.id || '', (sock.user as any)?.lid || '']
+                .map(decodeJid)
                 .filter(Boolean);
 
             let subject = 'el grupo';
@@ -281,14 +283,17 @@ export function handler(sock: WASocket) {
                 const metadata = await sock.groupMetadata(chatId);
                 subject = metadata?.subject || subject;
                 members = metadata?.participants?.length || 0;
+                rememberParticipants(metadata?.participants || []);
             } catch {}
 
             const template = config.message || defaultTemplate(kind);
 
             for (const id of ids) {
-                const number = normalizeNumber(id);
-                if (!number || botNums.includes(number)) continue;
-                if (isRecentEvent(`${chatId}:${action}:${number}`)) continue;
+                const original = decodeJid(id);
+                const resolved = UserJid(sock, chatId, original) || original;
+                const number = normalizeNumber(resolved);
+                if (!number || botIds.includes(original) || botIds.includes(resolved)) continue;
+                if (isRecentEvent(`${chatId}:${action}:${resolved}`)) continue;
 
                 const values: Record<string, string> = {
                     user: `@${number}`,
@@ -298,7 +303,11 @@ export function handler(sock: WASocket) {
                 const text = template.replace(/@(user|group|members)/gi, (_m: string, k: string) => values[k.toLowerCase()]);
 
                 try {
-                    await sock.sendMessage(chatId, { text, mentions: [id] });
+                    if (kind === 'welcome') {
+                        await sendWelcome(sock, chatId, [resolved, original], text, [original]);
+                    } else {
+                        await sock.sendMessage(chatId, { text, mentions: [original] });
+                    }
                 } catch (e) {
                     console.error('[WELCOME SEND]:', e);
                 }
@@ -329,6 +338,11 @@ export function handler(sock: WASocket) {
                 if (!msg?.body) continue;
                 const text = msg.body.trim();
                 if (!text) continue;
+
+                if (!msg.isGroup && isPrivateModeEnabled(sock)) {
+                    const parsed = extractCommandInfo(text);
+                    if (!parsed || parsed.cleanCmd !== 'code') continue;
+                }
 
                 if (msg.isGroup && text.toLowerCase() === 'aceptar') {
                     try {

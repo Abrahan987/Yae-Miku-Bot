@@ -17,6 +17,33 @@ export interface WelcomeConfig {
     message: string;
 }
 
+export async function sendWelcome(
+    sock: any,
+    groupJid: string,
+    userJids: string[],
+    text: string,
+    mentions: string[]
+): Promise<void> {
+    const targets = [...new Set([...userJids, groupJid].filter(Boolean))];
+    for (const target of targets) {
+        let url: string | undefined;
+        try {
+            url = await sock.profilePictureUrl(target, 'image');
+        } catch (error) {
+            console.warn('[WELCOME PHOTO LOOKUP]:', target, error);
+            continue;
+        }
+        if (!url) continue;
+        try {
+            await sock.sendMessage(groupJid, { image: { url }, caption: text, mentions });
+            return;
+        } catch (error) {
+            console.error('[WELCOME PHOTO SEND]:', target, error);
+        }
+    }
+    await sock.sendMessage(groupJid, { text, mentions });
+}
+
 export function getWelcomeConfig(groupJid: string, kind: WelcomeKind): WelcomeConfig {
     const row = db
         .prepare('SELECT * FROM group_welcome WHERE groupJid = ?')

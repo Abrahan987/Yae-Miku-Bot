@@ -166,6 +166,7 @@ WhatsApp ahora entrega a muchos usuarios como `algo@lid` en lugar de `numero@s.w
 | Bot primario por grupo | tabla `group_primary` |
 | Antilink por grupo | tabla `group_antilink` |
 | Bienvenida y despedida | tabla `group_welcome` |
+| Modo privado de cada bot | tabla `bot_settings` |
 | Matrimonios | tabla `marriages` |
 | Contador global de comandos | tabla `bot_stats` |
 
@@ -206,6 +207,7 @@ Prefijos por defecto: `.` y `#`. Con `.menu` el bot muestra la lista completa.
 | `setgoodbye <texto>` | Igual, para la despedida |
 
 Variables: `@user`, `@group`, `@members`.
+La bienvenida incluye la foto del usuario; si no está disponible, utiliza la foto del grupo. Si ninguna está disponible, envía el texto.
 
 ```text
 .setwelcome Hola @user, bienvenido a @group. Ya somos @members.
@@ -262,8 +264,14 @@ Variables: `@user`, `@group`, `@members`.
 |---|---|
 | `qr` · `code` | Vincula tu propio número como sub-bot |
 | `bots` · `sockets` | Lista de bots activos |
+| `modopri` · `antipri` · `antiprivadi` | Activa o desactiva los privados de tu sub-bot; también acepta `on/off` |
+| `sell on/off` | Activa o desactiva los privados del bot principal, solo owner |
 | `setusername` · `setpfp` · `setbanner` · `seticon` · `setowner` … | Personaliza el sub-bot |
 | `setprefix` · `setname` · `setstatus` · `join` · `leave` | Solo owner |
+
+Con el modo privado activo, el bot ignora los mensajes privados salvo `code`.
+Cada bot guarda su propio estado después de reiniciar. Para desactivarlo, usa el comando correspondiente desde un grupo.
+`sell <precio> <personaje>` sigue funcionando para las ventas de gacha.
 
 </details>
 
