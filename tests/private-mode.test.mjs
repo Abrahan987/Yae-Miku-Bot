@@ -216,7 +216,36 @@ test('owner JavaScript, shell and restart report results and errors', async () =
     await execshell(main, groupMsg, { rawArgs: 'node --not-a-real-option' }, null, raw);
     assert.match(sent.at(-1).text, /Error:/);
     await restart(main, groupMsg, {}, null, raw);
-    assert.match(sent.at(-1).text, /npm start/);
+    assert.match(sent.at(-1).text, /panel/);
+});
+
+test('owner commands accept arguments from the previous handler', async () => {
+    const raw = { key: { participant: '987654@lid' } };
+    sent.length = 0;
+    await execjs(main, groupMsg, {
+        command: 'e', text: '.e   "hola  mundo"', args: ['"hola', 'mundo"']
+    }, null, raw);
+    assert.match(sent.at(-1).text, /hola  mundo/);
+    await execshell(main, groupMsg, {
+        command: 'r', text: '.r node --version', args: ['node', '--version']
+    }, null, raw);
+    assert.match(sent.at(-1).text, /v\d+/);
+    await execjs(main, groupMsg, {
+        command: 'e', args: ['2', '+', '3']
+    }, null, raw);
+    assert.match(sent.at(-1).text, /5/);
+});
+
+test('restart without launcher closes the main socket to trigger its reconnect', async () => {
+    const raw = { key: { participant: '987654@lid' } };
+    const errors = [];
+    const sock = { ...main, end: async error => { errors.push(error); } };
+    await restart(sock, groupMsg, {}, null, raw);
+    assert.equal(errors.length, 1);
+    assert.match(errors[0].message, /Reinicio solicitado/);
+    assert.match(sent.at(-1).text, /conexión principal/);
+    await restart({ ...sock, subbotPhone: '573002' }, groupMsg, {}, null, { key: { fromMe: true } });
+    assert.equal(errors.length, 1);
 });
 
 test('only the main owner can request a restart from the launcher', async () => {

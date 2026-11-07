@@ -8,7 +8,12 @@ export async function authorizeOwnerCommand(sock: any, msg: any, rawMsg: any): P
 }
 
 export function commandInput(extra: any): string {
-    return String(extra?.rawArgs || '').trim();
+    if (typeof extra?.rawArgs === 'string') return extra.rawArgs.trim();
+    if (typeof extra?.text === 'string') {
+        const match = extra.text.trim().match(/^\S+[ \t\r\n]+([\s\S]*)$/);
+        if (match) return match[1].trim();
+    }
+    return Array.isArray(extra?.args) ? extra.args.join(' ').trim() : '';
 }
 
 export async function replyOwnerOutput(msg: any, title: string, value: string): Promise<void> {

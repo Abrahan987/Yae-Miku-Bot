@@ -277,7 +277,8 @@ Cada bot guarda su propio estado después de reiniciar. Para desactivarlo, usa e
 `sell <precio> <personaje>` sigue funcionando para las ventas de gacha.
 
 `ex`, `e` y `r` tienen acceso completo al servidor; sus resultados son visibles en el chat donde se usen.
-Para que `restart` funcione, inicia Yae con `npm start`; con otros métodos se debe reiniciar el proceso manualmente.
+Con `npm start`, `restart` reinicia el proceso y restaura los sub-bots. Con otros métodos reinicia solo la conexión principal; para reiniciar el proceso completo, usa el panel.
+No ejecutes `npm start` desde `r` mientras el bot está activo: iniciaría una segunda instancia.
 
 </details>
 
