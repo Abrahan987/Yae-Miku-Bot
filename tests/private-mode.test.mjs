@@ -128,6 +128,72 @@ test('handler resolves private LID through Baileys before owner authorization', 
     delete subA.signalRepository;
 });
 
+test('handler obtains the owner LID from Baileys when reverse lookup is unavailable', async () => {
+    let runs = 0;
+    let lookups = 0;
+    const fn = async (_sock, _msg, extra) => { if (extra.isOwner) runs++; };
+    fn.plugin = { owner: true };
+    commands.set('owner-forward-test', fn);
+    const sub = socket('573099');
+    sub.signalRepository = { lidMapping: {
+        getPNForLID: async () => null,
+        getLIDForPN: async phone => {
+            lookups++;
+            assert.equal(phone, '573001@s.whatsapp.net');
+            return '991234:2@lid';
+        }
+    } };
+    const send = async (id, lid, group = false) => sub.emit('messages.upsert', {
+        type: 'notify', messages: [{
+            key: { id, remoteJid: group ? '125@g.us' : lid, ...(group ? { participant: lid } : {}) },
+            message: { conversation: '.owner-forward-test' }
+        }]
+    });
+    await send('owner-forward-private', '991234@lid');
+    await send('owner-forward-group', '991234:2@lid', true);
+    await send('not-owner-forward', '991235@lid');
+    assert.equal(runs, 2);
+    assert.equal(lookups, 1);
+});
+
+test('simultaneous LID messages wait for the pending owner mapping', async () => {
+    let runs = 0;
+    const fn = async () => { runs++; };
+    fn.plugin = { owner: true };
+    commands.set('owner-concurrent-test', fn);
+    const sub = socket('573098');
+    sub.signalRepository = { lidMapping: {
+        getPNForLID: async () => null,
+        getLIDForPN: async () => {
+            await new Promise(resolve => setTimeout(resolve, 20));
+            return '992345@lid';
+        }
+    } };
+    const send = id => sub.emit('messages.upsert', { type: 'notify', messages: [{
+        key: { id, remoteJid: '992345@lid' },
+        message: { conversation: '.owner-concurrent-test' }
+    }] });
+    await Promise.all([send('owner-concurrent-1'), send('owner-concurrent-2')]);
+    assert.equal(runs, 2);
+});
+
+test('main bot and subbot sharing a phone process the same message independently', async () => {
+    let runs = 0;
+    const fn = async () => { runs++; };
+    fn.plugin = { owner: true };
+    commands.set('same-account-test', fn);
+    const first = socket('573001');
+    const second = socket('573001');
+    const message = {
+        key: { id: 'same-message-both-sessions', remoteJid: '124@g.us', fromMe: true },
+        message: { conversation: '.same-account-test' }
+    };
+    await first.emit('messages.upsert', { type: 'notify', messages: [message] });
+    await second.emit('messages.upsert', { type: 'notify', messages: [message] });
+    await first.emit('messages.upsert', { type: 'notify', messages: [message] });
+    assert.equal(runs, 2);
+});
+
 test('handler permits owner from own subbot but denies other fromMe accounts', async () => {
     let runs = 0;
     const fn = async () => { runs++; };

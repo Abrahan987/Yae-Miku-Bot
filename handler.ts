@@ -20,7 +20,18 @@ const DUP_LIMIT = 2000;
 const metaTtlMs = 300000;
 const processedIdsSet = new Set<string>();
 const processedIdsQueue: string[] = [];
+const socketIds = new WeakMap<object, number>();
+let nextSocketId = 0;
 const groupMetaCache = new LRUCache<string, { metadata: any; ts: number }>({ max: 500, ttl: metaTtlMs });
+
+function socketId(sock: object): number {
+    let id = socketIds.get(sock);
+    if (id === undefined) {
+        id = ++nextSocketId;
+        socketIds.set(sock, id);
+    }
+    return id;
+}
 
 export function invalidateGroupCache(chatId: string): void {
     if (!chatId) return;
@@ -213,6 +224,35 @@ function extractCommandInfo(text: string): { cleanCmd: string; usedPrefix: strin
 }
 
 const lidMisses = new Map<string, number>();
+const ownerLidLookups = new WeakMap<object, Map<string, { until: number; pending: Promise<void> }>>();
+
+async function learnOwnerLids(sock: any): Promise<void> {
+    const mapping = sock?.signalRepository?.lidMapping;
+    if (typeof mapping?.getLIDForPN !== 'function') return;
+    let lookups = ownerLidLookups.get(sock);
+    if (!lookups) {
+        lookups = new Map();
+        ownerLidLookups.set(sock, lookups);
+    }
+    const owners = ([] as any[]).concat((global as any).owner || [])
+        .map((owner) => normalizeNumber(String(owner)))
+        .filter(Boolean);
+    await Promise.all(owners.map(async (owner) => {
+        const existing = lookups!.get(owner);
+        if (existing && existing.until > Date.now()) return existing.pending;
+        const phone = `${owner}@s.whatsapp.net`;
+        const pending = (async () => {
+            try {
+                const lid = decodeJid(await mapping.getLIDForPN(phone));
+                if (lid.endsWith('@lid')) learnLid(lid, phone);
+            } catch (error) {
+                console.error('[OWNER LID LOOKUP]:', error);
+            }
+        })();
+        lookups!.set(owner, { until: Date.now() + 60000, pending });
+        await pending;
+    }));
+}
 
 async function learnSenderIdentity(sock: any, rawMsg: any): Promise<void> {
     try {
@@ -227,12 +267,9 @@ async function learnSenderIdentity(sock: any, rawMsg: any): Promise<void> {
         if (key.fromMe || !sender.endsWith('@lid')) return;
         if (UserJid(sock, chatId, sender).endsWith('@s.whatsapp.net')) return;
 
-        const cacheKey = `${decodeJid(sock.user?.id || '')}:${sender}`;
+        const cacheKey = `${socketId(sock)}:${sender}`;
         const last = lidMisses.get(cacheKey) || 0;
         if (Date.now() - last < 60000) return;
-        lidMisses.set(cacheKey, Date.now());
-        if (lidMisses.size > 2000) lidMisses.delete(lidMisses.keys().next().value as string);
-
         let phone: string | null | undefined;
         try {
             phone = await (sock as any).signalRepository?.lidMapping?.getPNForLID?.(sender);
@@ -245,8 +282,19 @@ async function learnSenderIdentity(sock: any, rawMsg: any): Promise<void> {
             return;
         }
         if (chatId.endsWith('@g.us')) {
-            const metadata = await sock.groupMetadata(chatId);
-            rememberParticipants(metadata?.participants || []);
+            try {
+                const metadata = await sock.groupMetadata(chatId);
+                rememberParticipants(metadata?.participants || []);
+            } catch (error) {
+                console.error('[SENDER GROUP METADATA]:', error);
+            }
+        }
+        if (!UserJid(sock, chatId, sender).endsWith('@s.whatsapp.net')) {
+            await learnOwnerLids(sock);
+        }
+        if (!UserJid(sock, chatId, sender).endsWith('@s.whatsapp.net')) {
+            lidMisses.set(cacheKey, Date.now());
+            if (lidMisses.size > 2000) lidMisses.delete(lidMisses.keys().next().value as string);
         }
     } catch (error) {
         console.error('[SENDER IDENTITY]:', error);
@@ -336,7 +384,7 @@ export function handler(sock: WASocket) {
                     const primary = getPrimary(jid);
                     if (primary && !isPrimaryBot(sock, primary)) continue;
                 }
-                if (isDuplicate(`${normalizeNumber(sock.user?.id || '')}:${msgId}`)) continue;
+                if (isDuplicate(`${socketId(sock)}:${msgId}`)) continue;
 
                 await learnSenderIdentity(sock, rawMsg);
                 const msg = serialize(sock, rawMsg);
