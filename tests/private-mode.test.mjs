@@ -27,7 +27,12 @@ const serialize = (_sock, raw) => ({
 
 mock.module('../src/lib/simple.ts', { namedExports: {
     decodeJid, UserJid, serialize, lidCache: new Map(),
-    learnLid: () => {}, rememberParticipants: () => {}
+    learnLid: (a, b) => {
+        const ids = [decodeJid(a), decodeJid(b)];
+        const lid = ids.find(id => id.endsWith('@lid'));
+        const phone = ids.find(id => id.endsWith('@s.whatsapp.net'));
+        if (lid && phone) mappings.set(lid, phone);
+    }, rememberParticipants: () => {}
 } });
 mock.module('../config.ts', { namedExports: {} });
 const commands = new Map();
@@ -56,9 +61,12 @@ const { default: modopri } = await import('../src/plugins/modopri.ts');
 const { default: sell } = await import('../src/plugins/sell.ts');
 const { sendWelcome, setWelcomeEnabled } = await import('../src/lib/welcome.ts');
 const { handler } = await import('../handler.ts');
+const { isOwner } = await import('../src/lib/perms.ts');
 const { default: execjs } = await import('../src/plugins/execjs.ts');
 const { default: execshell } = await import('../src/plugins/execshell.ts');
 const { default: restart } = await import('../src/plugins/restart.ts');
+const { default: setprefix } = await import('../src/plugins/setprefix.ts');
+const { default: setname } = await import('../src/plugins/setname.ts');
 
 function socket(phone) {
     const listeners = new Map();
@@ -85,6 +93,69 @@ db.setSubBotConfig('573003', { owner_jid: '573003' });
 const groupMsg = { from: '123@g.us', isGroup: true, sender: '573002@s.whatsapp.net', reply: async text => sent.push({ text }) };
 const ownerRaw = { key: { remoteJid: '123@g.us', participant: '777777@lid' } };
 const extra = args => ({ args, command: 'modopri' });
+
+test('main owner is recognized on subbots without promoting other subbot owners', () => {
+    const ownSub = { subbotPhone: '573001', user: { id: '573001:4@s.whatsapp.net' } };
+    const normalSub = { subbotPhone: '573002', user: { id: '573002@s.whatsapp.net' } };
+    const privateMsg = { isGroup: false, from: '573002@s.whatsapp.net' };
+    assert.equal(isOwner(ownSub, privateMsg, { key: { fromMe: true, remoteJid: '573002@s.whatsapp.net' } }), true);
+    assert.equal(isOwner(normalSub, privateMsg, { key: { fromMe: true, remoteJid: '573001@s.whatsapp.net' } }), false);
+    assert.equal(isOwner(normalSub, privateMsg, { key: { remoteJid: '987654@lid' } }), true);
+    assert.equal(isOwner(normalSub, groupMsg, { key: { remoteJid: groupMsg.from, participant: '987654@lid' } }), true);
+    assert.equal(isOwner(normalSub, groupMsg, { key: { remoteJid: groupMsg.from, participant: '573001@lid' } }), false);
+    assert.equal(isOwner(normalSub, groupMsg, { key: { remoteJid: groupMsg.from, participant: '888888@lid', remoteJidAlt: '573001@s.whatsapp.net' } }), false);
+    assert.equal(isOwner(main, privateMsg, { key: { fromMe: true } }), true);
+});
+
+test('handler resolves private LID through Baileys before owner authorization', async () => {
+    let runs = 0;
+    const fn = async (_sock, _msg, extra) => { if (extra.isOwner) runs++; };
+    fn.plugin = { owner: true };
+    commands.set('ownertest', fn);
+    subA.signalRepository = { lidMapping: { getPNForLID: async lid =>
+        lid === '123456@lid' ? '573001:7@s.whatsapp.net' : null
+    } };
+    await subA.emit('messages.upsert', { type: 'notify', messages: [{
+        key: { id: 'owner-private-lid', remoteJid: '123456@lid' },
+        message: { conversation: '.ownertest' }
+    }] });
+    assert.equal(runs, 1);
+    await subA.emit('messages.upsert', { type: 'notify', messages: [{
+        key: { id: 'other-private-lid', remoteJid: '573001@lid' },
+        message: { conversation: '.ownertest' }
+    }] });
+    assert.equal(runs, 1);
+    delete subA.signalRepository;
+});
+
+test('handler permits owner from own subbot but denies other fromMe accounts', async () => {
+    let runs = 0;
+    const fn = async () => { runs++; };
+    fn.plugin = { owner: true };
+    commands.set('owner-self-test', fn);
+    const ownSub = socket('573001');
+    await ownSub.emit('messages.upsert', { type: 'notify', messages: [{
+        key: { id: 'owner-self', remoteJid: '123@g.us', fromMe: true },
+        message: { conversation: '.owner-self-test' }
+    }] });
+    await subA.emit('messages.upsert', { type: 'notify', messages: [{
+        key: { id: 'other-self', remoteJid: '123@g.us', fromMe: true },
+        message: { conversation: '.owner-self-test' }
+    }] });
+    assert.equal(runs, 1);
+});
+
+test('owner can use owner plugin on subbot without granting main identity changes', async () => {
+    const raw = { key: { remoteJid: '123@g.us', participant: '987654@lid' } };
+    const previous = [...globalThis.prefix];
+    const currentName = globalThis.namebot;
+    await setprefix(subA, groupMsg, { args: ['!'] }, null, raw);
+    assert.deepEqual(globalThis.prefix, ['!']);
+    await setname(subA, groupMsg, { args: ['Otro'] }, null, raw);
+    assert.equal(globalThis.namebot, currentName);
+    globalThis.prefix = previous;
+    db.deleteSetting('prefix');
+});
 
 test('subbot privacy is owner-only, session-scoped, and persists in SQLite', async () => {
     await modopri(subA, groupMsg, extra(['on']), null, { key: { remoteJid: '123@g.us', participant: '888888@lid' } });

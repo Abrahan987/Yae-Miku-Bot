@@ -275,6 +275,7 @@ La bienvenida incluye la foto del usuario; si no está disponible, utiliza la fo
 Con el modo privado activo, el bot ignora los mensajes privados salvo `code`.
 Cada bot guarda su propio estado después de reiniciar. Para desactivarlo, usa el comando correspondiente desde un grupo.
 `sell <precio> <personaje>` sigue funcionando para las ventas de gacha.
+El owner principal también se reconoce en los sub-bots, pero los comandos de identidad global, ejecución y reinicio restringidos al bot principal no se pueden usar desde ellos. El propietario de un sub-bot conserva sus comandos de personalización.
 
 `ex`, `e` y `r` tienen acceso completo al servidor; sus resultados son visibles en el chat donde se usen.
 Con `npm start`, `restart` reinicia el proceso y restaura los sub-bots. Con otros métodos reinicia solo la conexión principal; para reiniciar el proceso completo, usa el panel.

@@ -143,8 +143,7 @@ async function handleAntilink(sock: any, msg: any, rawMsg: any, text: string): P
             .filter(Boolean)
             .flatMap((n: string) => [n, stripMexOne(n)]);
 
-        const owner = normalizeNumber((global as any).owner);
-        const isOwner = !!owner && nums.some(n => n === owner || n === stripMexOne(owner));
+        const isOwner = isOwnerPerm(sock, msg, rawMsg);
         const isAdmin = nums.some(n => adminSet.has(n)) || adminSet.has(raw) || adminSet.has(msg.sender);
         if (isOwner || isAdmin) return false;
 
@@ -213,38 +212,45 @@ function extractCommandInfo(text: string): { cleanCmd: string; usedPrefix: strin
     return cleanCmd ? { cleanCmd, usedPrefix } : null;
 }
 
-function isConfiguredOwner(...senders: string[]): boolean {
-    const owner = normalizeNumber((global as any).owner);
-    if (!owner) return false;
-    return senders.some((s) => {
-        const n = normalizeNumber(s || '');
-        return !!n && (n === owner || stripMexOne(n) === stripMexOne(owner));
-    });
-}
-
 const lidMisses = new Map<string, number>();
 
 async function learnSenderIdentity(sock: any, rawMsg: any): Promise<void> {
     try {
         const key = rawMsg?.key || {};
+        learnLid((sock.user as any)?.lid, sock.user?.id);
         learnLid(key.participant, key.participantAlt);
+        learnLid(key.participant, key.participantPn);
         learnLid(key.remoteJid, key.remoteJidAlt);
 
         const chatId: string = key.remoteJid || '';
-        const participant: string = key.participant || '';
-        if (!chatId.endsWith('@g.us') || !participant.endsWith('@lid')) return;
+        const sender: string = decodeJid(chatId.endsWith('@g.us') ? key.participant : key.remoteJid);
+        if (key.fromMe || !sender.endsWith('@lid')) return;
+        if (UserJid(sock, chatId, sender).endsWith('@s.whatsapp.net')) return;
 
-        const resolved = UserJid(sock, chatId, participant);
-        if (resolved.endsWith('@s.whatsapp.net')) return;
-
-        const last = lidMisses.get(participant) || 0;
+        const cacheKey = `${decodeJid(sock.user?.id || '')}:${sender}`;
+        const last = lidMisses.get(cacheKey) || 0;
         if (Date.now() - last < 60000) return;
-        lidMisses.set(participant, Date.now());
+        lidMisses.set(cacheKey, Date.now());
         if (lidMisses.size > 2000) lidMisses.delete(lidMisses.keys().next().value as string);
 
-        const metadata = await sock.groupMetadata(chatId);
-        rememberParticipants(metadata?.participants || []);
-    } catch {}
+        let phone: string | null | undefined;
+        try {
+            phone = await (sock as any).signalRepository?.lidMapping?.getPNForLID?.(sender);
+        } catch (error) {
+            console.error('[LID LOOKUP]:', error);
+        }
+        if (typeof phone === 'string' && decodeJid(phone).endsWith('@s.whatsapp.net')) {
+            learnLid(sender, decodeJid(phone));
+            lidMisses.delete(cacheKey);
+            return;
+        }
+        if (chatId.endsWith('@g.us')) {
+            const metadata = await sock.groupMetadata(chatId);
+            rememberParticipants(metadata?.participants || []);
+        }
+    } catch (error) {
+        console.error('[SENDER IDENTITY]:', error);
+    }
 }
 
 export function handler(sock: WASocket) {
@@ -406,7 +412,7 @@ export function handler(sock: WASocket) {
                 const reqAdmin = Boolean(plugin.admin);
                 const reqBotAdmin = Boolean(plugin.botAdmin);
                 const reqOwner = Boolean(plugin.owner);
-                const owner = isOwnerPerm(sock, msg, rawMsg) || isConfiguredOwner(msg.sender, rawMsg?.key?.participant || '', rawMsg?.key?.participantPn || '');
+                const owner = isOwnerPerm(sock, msg, rawMsg);
 
                 if (msg.isGroup && !owner && !isAdmin) {
                     let adminOnly = false;
