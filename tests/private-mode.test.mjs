@@ -211,14 +211,17 @@ test('handler permits owner from own subbot but denies other fromMe accounts', a
     assert.equal(runs, 1);
 });
 
-test('owner can use owner plugin on subbot without granting main identity changes', async () => {
+test('only the main owner can change main identity from a subbot', async () => {
     const raw = { key: { remoteJid: '123@g.us', participant: '987654@lid' } };
     const previous = [...globalThis.prefix];
     const currentName = globalThis.namebot;
     await setprefix(subA, groupMsg, { args: ['!'] }, null, raw);
     assert.deepEqual(globalThis.prefix, ['!']);
-    await setname(subA, groupMsg, { args: ['Otro'] }, null, raw);
+    await setname(subA, groupMsg, { args: ['Otro'] }, null, { key: { fromMe: true } });
     assert.equal(globalThis.namebot, currentName);
+    await setname(subA, groupMsg, { args: ['Otro'] }, null, raw);
+    assert.equal(globalThis.namebot, 'Otro');
+    globalThis.namebot = currentName;
     globalThis.prefix = previous;
     db.deleteSetting('prefix');
 });
@@ -328,12 +331,15 @@ test('welcome event resolves LID for photo and keeps the original mention', asyn
     assert.match(sent[0].caption, /@573001/);
 });
 
-test('owner execution rejects other users, unresolved LIDs and subbots', async () => {
+test('owner execution rejects other users and accepts the owner on subbots', async () => {
     const extra = { command: 'ex', rawArgs: 'globalThis.__yaeExecTest = true', args: [] };
     delete globalThis.__yaeExecTest;
     await execjs(main, groupMsg, extra, null, { key: { participant: '573001@lid' } });
     await execjs(subA, groupMsg, extra, null, { key: { fromMe: true } });
     assert.equal(globalThis.__yaeExecTest, undefined);
+    await execjs(subA, groupMsg, extra, null, { key: { participant: '987654@lid' } });
+    assert.equal(globalThis.__yaeExecTest, true);
+    delete globalThis.__yaeExecTest;
     await execjs(main, groupMsg, extra, null, { key: { participant: '987654@lid' } });
     assert.equal(globalThis.__yaeExecTest, true);
     delete globalThis.__yaeExecTest;
@@ -383,6 +389,10 @@ test('restart without launcher closes the main socket to trigger its reconnect',
     assert.match(sent.at(-1).text, /conexión principal/);
     await restart({ ...sock, subbotPhone: '573002' }, groupMsg, {}, null, { key: { fromMe: true } });
     assert.equal(errors.length, 1);
+    main.end = async error => { errors.push(error); };
+    await restart(subA, groupMsg, {}, null, raw);
+    assert.equal(errors.length, 2);
+    delete main.end;
 });
 
 test('only the main owner can request a restart from the launcher', async () => {
@@ -399,7 +409,7 @@ test('only the main owner can request a restart from the launcher', async () => 
         await restart(subA, groupMsg, {}, null, { key: { fromMe: true } });
         await restart(main, groupMsg, {}, null, { key: { participant: '573001@lid' } });
         assert.deepEqual(requests, []);
-        await restart(main, groupMsg, {}, null, { key: { participant: '987654@lid' } });
+        await restart(subA, groupMsg, {}, null, { key: { participant: '987654@lid' } });
         assert.deepEqual(requests, ['yae:restart', 'exit:0']);
     } finally {
         if (oldSend === undefined) delete process.send;

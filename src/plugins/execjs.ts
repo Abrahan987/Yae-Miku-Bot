@@ -4,7 +4,7 @@ import { authorizeOwnerCommand, commandInput, replyOwnerOutput } from '../lib/ow
 
 export const command = ['ex', 'e'];
 export const category = 'owner';
-export const description = 'Ejecuta JavaScript en el bot principal (solo owner).';
+export const description = 'Ejecuta JavaScript (solo owner principal).';
 export const owner = true;
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;

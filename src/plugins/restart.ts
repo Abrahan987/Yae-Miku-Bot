@@ -1,5 +1,6 @@
 import { authorizeOwnerCommand } from '../lib/owner_command.ts';
 import { deco } from '../lib/perms.ts';
+import { getMainSocket } from '../lib/botcontext.ts';
 
 export const command = ['restart'];
 export const category = 'owner';
@@ -9,11 +10,12 @@ export const owner = true;
 export default async function (sock: any, msg: any, _extra: any, _db: any, rawMsg: any) {
     if (!await authorizeOwnerCommand(sock, msg, rawMsg)) return;
     if (process.env.YAE_LAUNCHER !== '1' || !process.send || !process.connected) {
-        if (typeof sock?.end !== 'function') {
+        const mainSocket = sock?.subbotPhone ? getMainSocket() : sock;
+        if (typeof mainSocket?.end !== 'function') {
             return msg.reply(deco('𝙴𝚁𝚁𝙾𝚁', '🪷 No se pudo reiniciar la conexión. Reinicia el bot desde el panel.'));
         }
         await msg.reply(deco('𝚁𝙴𝙸𝙽𝙸𝙲𝙸𝙾', '🪷 Reiniciando la conexión principal. El proceso y los subbots seguirán activos.'));
-        await sock.end(new Error('Reinicio solicitado por el owner'));
+        await mainSocket.end(new Error('Reinicio solicitado por el owner'));
         return;
     }
     await msg.reply(deco('𝚁𝙴𝙸𝙽𝙸𝙲𝙸𝙾', '🪷 Reiniciando el bot principal y sus subbots. Espera un momento.'));

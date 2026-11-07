@@ -3,7 +3,7 @@ import { authorizeOwnerCommand, commandInput, replyOwnerOutput } from '../lib/ow
 
 export const command = ['r'];
 export const category = 'owner';
-export const description = 'Ejecuta comandos del sistema en el bot principal (solo owner).';
+export const description = 'Ejecuta comandos del sistema (solo owner principal).';
 export const owner = true;
 
 export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {

@@ -1,8 +1,7 @@
-import { isMainPrivateModeOwner } from './private_mode.ts';
-import { deco, warn } from './perms.ts';
+import { isOwner, deco, warn } from './perms.ts';
 
 export async function authorizeOwnerCommand(sock: any, msg: any, rawMsg: any): Promise<boolean> {
-    if (isMainPrivateModeOwner(sock, msg, rawMsg)) return true;
+    if (isOwner(sock, msg, rawMsg)) return true;
     await msg.reply(warn.owner());
     return false;
 }

@@ -1,4 +1,4 @@
-import { isOwner, isMainBot, deco, warn } from '../lib/perms.ts';
+import { isOwner, deco, warn } from '../lib/perms.ts';
 
 export const command = ['nuevonmbot', 'setnombrebot'];
 export const category = 'owner';
@@ -8,7 +8,7 @@ export const admin = false;
 export const botAdmin = false;
 
 export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {
-    if (!isMainBot(sock) || !isOwner(sock, msg, rawMsg)) {
+    if (!isOwner(sock, msg, rawMsg)) {
         return sock.sendMessage(msg.from, { text: warn.owner() }, { quoted: msg });
     }
 

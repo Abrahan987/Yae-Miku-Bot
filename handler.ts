@@ -9,7 +9,7 @@ import { getWelcomeConfig, sendWelcome, type WelcomeKind } from './src/lib/welco
 import { handleGachaAccept, touchUser } from './src/lib/gacha.ts';
 import { LRUCache } from 'lru-cache';
 import { isOwner as isOwnerPerm } from './src/lib/perms.ts';
-import { runWithBot, installBotIdentity } from './src/lib/botcontext.ts';
+import { runWithBot, installBotIdentity, setMainSocket } from './src/lib/botcontext.ts';
 import { isPrivateModeEnabled } from './src/lib/private_mode.ts';
 
 installBotIdentity();
@@ -302,6 +302,7 @@ async function learnSenderIdentity(sock: any, rawMsg: any): Promise<void> {
 }
 
 export function handler(sock: WASocket) {
+    if (!(sock as any).subbotPhone) setMainSocket(sock);
     const on = (name: string, fn: (...args: any[]) => any) =>
         (sock.ev as any).on(name, (...args: any[]) => runWithBot(sock, () => fn(...args)));
 
