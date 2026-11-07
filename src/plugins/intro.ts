@@ -1,4 +1,4 @@
-.e 
+
 import sharp from 'sharp'
 
 export const command = ['yaecard', 'testcard']
