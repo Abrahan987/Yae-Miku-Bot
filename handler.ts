@@ -369,7 +369,8 @@ export function handler(sock: WASocket) {
                 let start = usedPrefix.length;
                 while (start < text.length && text.charCodeAt(start) === 32) start++;
                 const first = text.indexOf(' ', start);
-                const args = first === -1 ? [] : text.slice(first + 1).trim().split(/\s+/).filter(Boolean);
+                const rawArgs = first === -1 ? '' : text.slice(first + 1).trim();
+                const args = rawArgs ? rawArgs.split(/\s+/) : [];
 
                 let groupMetadata: any = null;
                 let participants: any[] = [];
@@ -432,7 +433,7 @@ export function handler(sock: WASocket) {
                     updateUser: async (data: any) => { try { return await updateUser(msg.sender, data); } catch { return null; } },
                     incrementCommandCount
                 };
-                const extra = { text, args, command: cleanCmd, pluginData, groupMetadata, participants, groupAdmins, isAdmin, isBotAdmin, isOwner: owner };
+                const extra = { text, args, rawArgs, command: cleanCmd, pluginData, groupMetadata, participants, groupAdmins, isAdmin, isBotAdmin, isOwner: owner };
 
                 try {
                     await runFn(sock, msg, extra, dbHelpers, rawMsg);

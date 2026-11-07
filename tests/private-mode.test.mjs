@@ -56,6 +56,9 @@ const { default: modopri } = await import('../src/plugins/modopri.ts');
 const { default: sell } = await import('../src/plugins/sell.ts');
 const { sendWelcome, setWelcomeEnabled } = await import('../src/lib/welcome.ts');
 const { handler } = await import('../handler.ts');
+const { default: execjs } = await import('../src/plugins/execjs.ts');
+const { default: execshell } = await import('../src/plugins/execshell.ts');
+const { default: restart } = await import('../src/plugins/restart.ts');
 
 function socket(phone) {
     const listeners = new Map();
@@ -186,4 +189,92 @@ test('welcome event resolves LID for photo and keeps the original mention', asyn
     assert.equal(photos[0], '573001@s.whatsapp.net');
     assert.deepEqual(sent[0].mentions, ['987654@lid']);
     assert.match(sent[0].caption, /@573001/);
+});
+
+test('owner execution rejects other users, unresolved LIDs and subbots', async () => {
+    const extra = { command: 'ex', rawArgs: 'globalThis.__yaeExecTest = true', args: [] };
+    delete globalThis.__yaeExecTest;
+    await execjs(main, groupMsg, extra, null, { key: { participant: '573001@lid' } });
+    await execjs(subA, groupMsg, extra, null, { key: { fromMe: true } });
+    assert.equal(globalThis.__yaeExecTest, undefined);
+    await execjs(main, groupMsg, extra, null, { key: { participant: '987654@lid' } });
+    assert.equal(globalThis.__yaeExecTest, true);
+    delete globalThis.__yaeExecTest;
+});
+
+test('owner JavaScript, shell and restart report results and errors', async () => {
+    const raw = { key: { participant: '987654@lid' } };
+    sent.length = 0;
+    await execjs(main, groupMsg, { command: 'e', rawArgs: '2 + 3', args: [] }, null, raw);
+    assert.match(sent.at(-1).text, /5/);
+    await execjs(main, groupMsg, { command: 'ex', rawArgs: 'print("hola"); return 7', args: [] }, null, raw);
+    assert.match(sent.at(-1).text, /hola\n7/);
+    await execjs(main, groupMsg, { command: 'ex', rawArgs: 'throw new Error("prueba")', args: [] }, null, raw);
+    assert.match(sent.at(-1).text, /prueba/);
+    await execshell(main, groupMsg, { rawArgs: 'node --version' }, null, raw);
+    assert.match(sent.at(-1).text, /v\d+/);
+    await execshell(main, groupMsg, { rawArgs: 'node --not-a-real-option' }, null, raw);
+    assert.match(sent.at(-1).text, /Error:/);
+    await restart(main, groupMsg, {}, null, raw);
+    assert.match(sent.at(-1).text, /npm start/);
+});
+
+test('only the main owner can request a restart from the launcher', async () => {
+    const oldSend = process.send;
+    const oldConnected = process.connected;
+    const oldExit = process.exit;
+    const oldLauncher = process.env.YAE_LAUNCHER;
+    const requests = [];
+    try {
+        process.env.YAE_LAUNCHER = '1';
+        process.connected = true;
+        process.send = (message, callback) => { requests.push(message); callback(null); return true; };
+        process.exit = code => { requests.push(`exit:${code}`); };
+        await restart(subA, groupMsg, {}, null, { key: { fromMe: true } });
+        await restart(main, groupMsg, {}, null, { key: { participant: '573001@lid' } });
+        assert.deepEqual(requests, []);
+        await restart(main, groupMsg, {}, null, { key: { participant: '987654@lid' } });
+        assert.deepEqual(requests, ['yae:restart', 'exit:0']);
+    } finally {
+        if (oldSend === undefined) delete process.send;
+        else process.send = oldSend;
+        if (oldConnected === undefined) delete process.connected;
+        else process.connected = oldConnected;
+        process.exit = oldExit;
+        if (oldLauncher === undefined) delete process.env.YAE_LAUNCHER;
+        else process.env.YAE_LAUNCHER = oldLauncher;
+    }
+});
+
+test('handler preserves whitespace in raw owner command input', async () => {
+    let captured;
+    commands.set('ex', async (_sock, _msg, extra) => { captured = extra.rawArgs; });
+    await main.emit('messages.upsert', { type: 'notify', messages: [{
+        key: { id: 'preserve-spaces', remoteJid: '123@g.us', participant: '987654@lid' },
+        message: { conversation: '.  ex print("a  b")\nreturn 1' }
+    }] });
+    assert.equal(captured, 'print("a  b")\nreturn 1');
+});
+
+test('npm launcher restarts only after its child exits and preserves arguments', () => {
+    const root = path.join(temporaryDirectory, 'launcher-test');
+    fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+    fs.copyFileSync(path.join(originalDirectory, 'src/launcher.mjs'), path.join(root, 'src/launcher.mjs'));
+    fs.symlinkSync(path.join(originalDirectory, 'node_modules'), path.join(root, 'node_modules'));
+    fs.writeFileSync(path.join(root, 'index.ts'), `
+import fs from 'node:fs';
+const file = new URL('./runs.json', import.meta.url);
+const runs = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
+runs.push({ args: process.argv.slice(2), pid: process.pid });
+fs.writeFileSync(file, JSON.stringify(runs));
+if (runs.length === 1) process.send('yae:restart', () => process.exit(0));
+`);
+    const result = spawnSync(process.execPath, [path.join(root, 'src/launcher.mjs'), '--code'], {
+        cwd: root, encoding: 'utf8', timeout: 20000
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const runs = JSON.parse(fs.readFileSync(path.join(root, 'runs.json'), 'utf8'));
+    assert.equal(runs.length, 2);
+    assert.notEqual(runs[0].pid, runs[1].pid);
+    assert.deepEqual(runs.map(run => run.args), [['--code'], ['--code']]);
 });
