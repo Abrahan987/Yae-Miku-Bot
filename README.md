@@ -191,6 +191,7 @@ Prefijos por defecto: `.` y `#`. Con `.menu` el bot muestra la lista completa.
 | `open` · `close` | Abre o cierra el grupo |
 | `link` · `revoke` | Enlace del grupo y reinicio del enlace |
 | `setgpname` · `setgpdesc` · `setgpbanner` | Edita el grupo |
+| `autoadmin` | El owner obtiene administrador si el bot es administrador |
 | `setprimary` · `resetprimary` | Bot primario del grupo |
 | `topcount` · `topinactive` · `count` | Actividad de los miembros |
 

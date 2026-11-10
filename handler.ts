@@ -488,7 +488,7 @@ export function handler(sock: WASocket) {
                     updateUser: async (data: any) => { try { return await updateUser(msg.sender, data); } catch { return null; } },
                     incrementCommandCount
                 };
-                const extra = { text, args, rawArgs, command: cleanCmd, pluginData, groupMetadata, participants, groupAdmins, isAdmin, isBotAdmin, isOwner: owner };
+                const extra = { text, args, rawArgs, command: cleanCmd, pluginData, groupMetadata, participants, groupAdmins, isAdmin, isBotAdmin, isOwner: owner, invalidateGroupCache };
 
                 try {
                     await runFn(sock, msg, extra, dbHelpers, rawMsg);
