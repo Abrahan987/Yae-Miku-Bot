@@ -46,6 +46,80 @@ commands.set('setprefix', setprefix);
 promote.default.plugin = { admin: promote.admin, botAdmin: promote.botAdmin };
 for (const command of promote.command) commands.set(command, promote.default);
 
+if (process.env.YAE_BENCHMARK === '1') {
+    test('benchmark group command dispatch', async () => {
+        const listeners = new Map();
+        let completed = 0;
+        commands.set('bench', async () => { completed++; });
+        const sock = {
+            subbotPhone: '573002',
+            user: { id: '573002@s.whatsapp.net' },
+            ev: { on: (event, fn) => listeners.set(event, fn) },
+            groupMetadata: async () => ({ participants: [] }),
+            sendMessage: async () => {}
+        };
+        handler(sock);
+        let id = 0;
+        const send = () => listeners.get('messages.upsert')({
+            type: 'notify', messages: [{
+                key: { id: String(++id), remoteJid: '789@g.us', participant: '573001@s.whatsapp.net' },
+                message: { conversation: '.bench' }
+            }]
+        });
+        for (let i = 0; i < 500; i++) await send();
+        const times = [];
+        for (let r = 0; r < 5; r++) {
+            const start = performance.now();
+            for (let i = 0; i < 1500; i++) await send();
+            times.push(performance.now() - start);
+        }
+        assert.equal(completed, 8000);
+        times.sort((a, b) => a - b);
+        console.log('BENCH_GROUP_MEDIAN_MS', times[2].toFixed(2));
+    });
+
+    test('benchmark cold group ping dispatch', async () => {
+        const listeners = new Map();
+        const { default: ping } = await import('../src/plugins/ping.ts');
+        commands.set('ping', ping);
+        let replies = 0;
+        const sock = {
+            subbotPhone: '573004',
+            user: { id: '573004@s.whatsapp.net' },
+            ev: { on: (event, fn) => listeners.set(event, fn) },
+            groupMetadata: async () => {
+                await new Promise(resolve => setTimeout(resolve, 20));
+                return { participants: [] };
+            },
+            sendMessage: async (_chat, content) => {
+                assert.match(content.text, /PONG/);
+                replies++;
+            }
+        };
+        handler(sock);
+        let id = 0;
+        const results = [];
+        for (const needsGroupMetadata of [true, false]) {
+            ping.plugin = { needsGroupMetadata };
+            const times = [];
+            for (let r = 0; r < 3; r++) {
+                const start = performance.now();
+                for (let i = 0; i < 10; i++) {
+                    await listeners.get('messages.upsert')({ type: 'notify', messages: [{
+                        key: { id: String(++id), remoteJid: `${10000 + id}@g.us`, participant: '573001@s.whatsapp.net' },
+                        message: { conversation: '.ping' }
+                    }] });
+                }
+                times.push(performance.now() - start);
+            }
+            times.sort((a, b) => a - b);
+            results.push(times[1]);
+        }
+        assert.equal(replies, 60);
+        console.log('BENCH_COLD_PING_MS', results.map(time => time.toFixed(2)).join(' '));
+    });
+}
+
 test('real serializer and LID cache authorize the owner, not another user', async () => {
     const listeners = new Map();
     const replies = [];
@@ -106,6 +180,7 @@ test('autoadmin promotes only the verified owner using the group participant LID
                 message: { conversation: command }
             }]
         });
+
         await send('autoadmin-owner', '901234@lid');
         assert.deepEqual(updates, [['456@g.us', ['901234@lid'], 'promote']]);
         assert.match(replies.at(-1), /administrador/);
@@ -118,4 +193,46 @@ test('autoadmin promotes only the verified owner using the group participant LID
         await send('autoadmin-failure', '901234@lid');
         assert.equal(updates.length, 2);
         assert.match(replies.at(-1), /no confirmó/);
+});
+
+test('fast group commands skip metadata only when admin-only mode is disabled', async () => {
+            const listeners = new Map();
+            let lookups = 0;
+            let runs = 0;
+            const fn = async () => { runs++; };
+            fn.plugin = { needsGroupMetadata: false };
+            commands.set('fastcheck', fn);
+            const sock = {
+                subbotPhone: '573006',
+                user: { id: '573006@s.whatsapp.net' },
+                ev: { on: (event, fn) => listeners.set(event, fn) },
+                groupMetadata: async () => {
+                    lookups++;
+                    return { participants: [{ id: '573003@s.whatsapp.net', admin: null }] };
+                },
+                sendMessage: async () => {}
+            };
+            handler(sock);
+            const chat = '645@g.us';
+            const send = async (id, participant) => listeners.get('messages.upsert')({
+                type: 'notify', messages: [{
+                    key: { id, remoteJid: chat, participant },
+                    message: { conversation: '.fastcheck' }
+                }]
+            });
+            await send('fast-no-restriction', '573003@s.whatsapp.net');
+            assert.equal(runs, 1);
+            assert.equal(lookups, 0);
+            db.setSetting(`onlyadmin:${chat}`, '1');
+            await send('fast-admin-only', '573003@s.whatsapp.net');
+            assert.equal(runs, 1);
+            assert.equal(lookups, 1);
+            await send('fast-owner', '573001@s.whatsapp.net');
+            assert.equal(runs, 2);
+            assert.equal(lookups, 1);
+            db.setSetting(`onlyadmin:${chat}`, '0');
+            await send('fast-unlocked', '573003@s.whatsapp.net');
+            assert.equal(runs, 3);
+            assert.equal(lookups, 1);
+            assert.equal(db.db.prepare('SELECT message_count FROM message_stats WHERE groupJid = ? AND userJid = ?').get(chat, '573003@s.whatsapp.net').message_count, 3);
 });

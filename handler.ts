@@ -137,8 +137,8 @@ async function getGroupMetadata(sock: any, chatId: string): Promise<any> {
 // Los admins y el owner estan exentos. Devuelve true si el mensaje fue eliminado.
 async function handleAntilink(sock: any, msg: any, rawMsg: any, text: string): Promise<boolean> {
     if (!msg.isGroup || rawMsg?.key?.fromMe) return false;
-    if (!isAntilinkEnabled(msg.from)) return false;
     if (!containsLink(text)) return false;
+    if (!isAntilinkEnabled(msg.from)) return false;
 
     try {
         const metadata = await getGroupMetadata(sock, msg.from);
@@ -284,7 +284,11 @@ async function learnSenderIdentity(sock: any, rawMsg: any): Promise<void> {
         if (chatId.endsWith('@g.us')) {
             try {
                 const metadata = await sock.groupMetadata(chatId);
-                rememberParticipants(metadata?.participants || []);
+                if (metadata) {
+                    rememberParticipants(metadata.participants || []);
+                    const key = `${normalizeNumber(sock.user?.id || '')}:${chatId}`;
+                    groupMetaCache.set(key, { metadata, ts: Date.now() });
+                }
             } catch (error) {
                 console.error('[SENDER GROUP METADATA]:', error);
             }
@@ -432,8 +436,13 @@ export function handler(sock: WASocket) {
                 let groupAdmins: string[] = [];
                 let isAdmin = false;
                 let isBotAdmin = false;
-
+                const plugin = runFn.plugin || {};
+                let adminOnly = false;
                 if (msg.isGroup) {
+                    try { adminOnly = getSetting(`onlyadmin:${msg.from}`) === '1'; } catch {}
+                }
+
+                if (msg.isGroup && (plugin.needsGroupMetadata !== false || plugin.admin || plugin.botAdmin || adminOnly)) {
                     try {
                         groupMetadata = await getGroupMetadata(sock, msg.from);
                         participants = groupMetadata?.participants || [];
@@ -457,15 +466,12 @@ export function handler(sock: WASocket) {
                     } catch {}
                 }
 
-                const plugin = runFn.plugin || {};
                 const reqAdmin = Boolean(plugin.admin);
                 const reqBotAdmin = Boolean(plugin.botAdmin);
                 const reqOwner = Boolean(plugin.owner);
                 const owner = isOwnerPerm(sock, msg, rawMsg);
 
                 if (msg.isGroup && !owner && !isAdmin) {
-                    let adminOnly = false;
-                    try { adminOnly = getSetting(`onlyadmin:${msg.from}`) === '1'; } catch {}
                     if (adminOnly) continue;
                 }
 

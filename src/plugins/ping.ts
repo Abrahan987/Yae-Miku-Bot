@@ -1,6 +1,7 @@
 export const command = ['ping', 'p', 'speed'];
 export const category = 'info';
 export const description = 'Muestra la latencia actual y estado del bot.';
+export const needsGroupMetadata = false;
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
     const start = Date.now();

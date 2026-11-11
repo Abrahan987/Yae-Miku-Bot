@@ -1,9 +1,13 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import path from 'node:path';
 import { lidCache, decodeJid, UserJid } from './simple.ts';
 
 const dbPath = path.resolve(process.cwd(), 'database.sqlite');
 const db = new DatabaseSync(dbPath);
+let settingSelect: StatementSync | undefined;
+let groupSelect: StatementSync | undefined;
+let groupInsert: StatementSync | undefined;
+let messageCountUpsert: StatementSync | undefined;
 
 export async function loadDB() {
     db.exec(`
@@ -86,7 +90,7 @@ const LID_RE = /^([^@:]+)(?::\d+)?@lid$/;
 const USER_TABLES = ['warnings', 'message_stats', 'economy_cooldowns', 'gacha_claims', 'gacha_users', 'gacha_profile'];
 
 export function getSetting(key: string): string | null {
-    const row = db.prepare('SELECT value FROM bot_settings WHERE key = ?').get(key) as any;
+    const row = (settingSelect ??= db.prepare('SELECT value FROM bot_settings WHERE key = ?')).get(key) as any;
     return row ? String(row.value) : null;
 }
 
@@ -251,11 +255,11 @@ export function updateUser(
 }
 
 export function getGroup(jid: string) {
-    const stmt = db.prepare('SELECT * FROM groups WHERE jid = ?');
+    const stmt = groupSelect ??= db.prepare('SELECT * FROM groups WHERE jid = ?');
     let group = stmt.get(jid) as any;
 
     if (!group) {
-        db.prepare('INSERT INTO groups (jid) VALUES (?)').run(jid);
+        (groupInsert ??= db.prepare('INSERT INTO groups (jid) VALUES (?)')).run(jid);
 
         group = {
             jid,
@@ -290,7 +294,7 @@ export function incrementMessageCount(
 ) {
     if (!groupJid || !userJid) return;
 
-    db.prepare(`
+    (messageCountUpsert ??= db.prepare(`
         INSERT INTO message_stats (
             groupJid,
             userJid,
@@ -299,7 +303,7 @@ export function incrementMessageCount(
         VALUES (?, ?, 1)
         ON CONFLICT(groupJid, userJid)
         DO UPDATE SET message_count = message_count + 1
-    `).run(groupJid, userJid);
+    `)).run(groupJid, userJid);
 }
 
 export function getTopActive(

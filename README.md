@@ -290,6 +290,8 @@ No ejecutes `npm start` desde `r` mientras el bot está activo: iniciaría una s
 
 Creá `src/plugins/hola.ts`, guardalo y ya existe el comando. No hay que registrar nada.
 
+Si un plugin no necesita datos ni permisos de administrador del grupo, puede exportar `needsGroupMetadata = false` para evitar esa consulta. El modo solo admins sigue verificando los permisos.
+
 ```ts
 export const command = ['hola', 'hi'];
 export const category = 'utils';

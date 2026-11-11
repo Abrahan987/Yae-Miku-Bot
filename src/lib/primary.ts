@@ -1,8 +1,10 @@
 import { db } from './database.ts';
+import type { StatementSync } from 'node:sqlite';
+
+let primarySelect: StatementSync | undefined;
 
 export function getPrimary(groupJid: string): string {
-    const row = db
-        .prepare('SELECT botNumber FROM group_primary WHERE groupJid = ?')
+    const row = (primarySelect ??= db.prepare('SELECT botNumber FROM group_primary WHERE groupJid = ?'))
         .get(groupJid) as any;
     return row?.botNumber || '';
 }

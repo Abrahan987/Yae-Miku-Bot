@@ -47,7 +47,8 @@ export async function loadPlugins(dir = '../plugins') {
                 handlerFn.plugin = {
                     admin: Boolean(cmdModule.admin ?? cmdModule.default?.admin),
                     botAdmin: Boolean(cmdModule.botAdmin ?? cmdModule.botadmin ?? cmdModule.default?.botAdmin ?? cmdModule.default?.botadmin),
-                    owner: Boolean(cmdModule.owner ?? cmdModule.isOwner ?? cmdModule.default?.owner ?? cmdModule.default?.isOwner)
+                    owner: Boolean(cmdModule.owner ?? cmdModule.isOwner ?? cmdModule.default?.owner ?? cmdModule.default?.isOwner),
+                    needsGroupMetadata: cmdModule.needsGroupMetadata !== false
                 };
 
                 for (const cmd of commands) commandMap.set(cmd, handlerFn);

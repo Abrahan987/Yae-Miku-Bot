@@ -3,6 +3,7 @@ import { resolveBotName, resolveBotBanner } from '../lib/subbot_config.ts';
 export const command = ['menu', 'help', 'comandos'];
 export const category = 'info';
 export const description = 'Muestra el menú principal con todos los comandos.';
+export const needsGroupMetadata = false;
 
 export default async function (sock: any, msg: any, extra: any) {
     const pluginData = extra.pluginData;
