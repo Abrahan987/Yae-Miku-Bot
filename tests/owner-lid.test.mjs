@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const originalDirectory = process.cwd();
 const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'yae-owner-lid-'));
@@ -220,6 +221,7 @@ test('fast group commands skip metadata only when admin-only mode is disabled', 
                     message: { conversation: '.fastcheck' }
                 }]
             });
+
             await send('fast-no-restriction', '573003@s.whatsapp.net');
             assert.equal(runs, 1);
             assert.equal(lookups, 0);
@@ -235,4 +237,65 @@ test('fast group commands skip metadata only when admin-only mode is disabled', 
             assert.equal(runs, 3);
             assert.equal(lookups, 1);
             assert.equal(db.db.prepare('SELECT message_count FROM message_stats WHERE groupJid = ? AND userJid = ?').get(chat, '573003@s.whatsapp.net').message_count, 3);
+});
+
+test('brat commands encode text and generate static and animated stickers', async () => {
+                const { default: sticker, command } = await import('../src/plugins/sticker.ts');
+                const webp = await import('node-webpmux');
+                const image = spawnSync('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i', 'color=red:s=64x64',
+                    '-frames:v', '1', '-threads', '1', '-f', 'image2pipe', '-vcodec', 'png', 'pipe:1']);
+                const video = spawnSync('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=s=64x64:r=10',
+                    '-t', '1', '-c:v', 'mpeg4', '-threads', '1', '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1']);
+                assert.equal(image.status, 0, String(image.stderr));
+                assert.equal(video.status, 0, String(video.stderr));
+
+                const originalFetch = globalThis.fetch;
+                const urls = [];
+                const sent = [];
+                const replies = [];
+                const msg = { chat: '123@g.us', pushName: 'Prueba', reply: async text => replies.push(text) };
+                const sock = { sendMessage: async (chat, data) => sent.push({ chat, ...data }) };
+                try {
+                    globalThis.fetch = async url => {
+                        urls.push(new URL(url));
+                        const animated = url.pathname.endsWith('/bratvideo');
+                        return new Response(animated ? video.stdout : image.stdout, { status: 200 });
+                    };
+                    for (const name of ['brat', 'bratv', 'bratvideo', 'bratanime']) {
+                        assert.ok(command.includes(name));
+                        await sticker(sock, msg, { command: name, args: ['Yae', '&', 'Miku'], rawArgs: 'Yae & Miku' });
+                    }
+                    assert.deepEqual(urls.map(url => url.pathname), [
+                        '/canvas/brat', '/canvas/bratvideo', '/canvas/bratvideo', '/canvas/bratanime'
+                    ]);
+                    assert.ok(urls.every(url => url.searchParams.get('text') === 'Yae & Miku'));
+                    assert.equal(sent.length, 4);
+                    for (let i = 0; i < sent.length; i++) {
+                        assert.equal(sent[i].chat, '123@g.us');
+                        const decoded = new webp.default.Image();
+                        await decoded.load(sent[i].sticker);
+                        assert.equal(decoded.width, 512);
+                        assert.equal(decoded.height, 512);
+                        assert.equal(decoded.hasAnim, i === 1 || i === 2);
+                        assert.ok(decoded.exif);
+                    }
+                    await sticker(sock, msg, { command: 'brat', args: [] });
+                    assert.match(replies.at(-1), /Escribe el texto/);
+                    assert.equal(urls.length, 4);
+                    globalThis.fetch = async () => new Response('Error', { status: 503 });
+                    await sticker(sock, msg, { command: 'brat', args: ['hola'] });
+                    assert.match(replies.at(-1), /HTTP 503/);
+                    globalThis.fetch = async () => new Response('not media', { status: 200 });
+                    await sticker(sock, msg, { command: 'bratvideo', args: ['hola'] });
+                    assert.match(replies.at(-1), /formato multimedia compatible/);
+                    assert.equal(sent.length, 4);
+                    globalThis.fetch = async () => new Response(image.stdout, { status: 200 });
+                    await sticker(sock, msg, { command: 's', args: ['https://example.test/image.png'] });
+                    assert.equal(sent.length, 5);
+                    const ordinary = new webp.default.Image();
+                    await ordinary.load(sent.at(-1).sticker);
+                    assert.equal(ordinary.hasAnim, false);
+                } finally {
+                    globalThis.fetch = originalFetch;
+                }
 });

@@ -2,12 +2,20 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
+import { randomUUID } from 'node:crypto';
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
+import { fileTypeFromBuffer } from 'file-type';
 import webp from 'node-webpmux';
 
-export const command = ['sticker', 's', 'stiker'];
+export const command = ['sticker', 's', 'stiker', 'brat', 'bratv', 'bratvideo', 'bratanime'];
 export const category = 'stickers';
 export const description = 'Convierte una imagen, video, gif, sticker o URL en sticker.';
+export const menu = [
+    { command: ['sticker', 's', 'stiker'], description: 'Convierte una imagen o video en sticker.' },
+    { command: ['brat'], description: 'Crea un sticker brat con texto.' },
+    { command: ['bratv', 'bratvideo'], description: 'Crea un sticker brat animado con texto.' },
+    { command: ['bratanime'], description: 'Crea un sticker brat anime con texto.' }
+];
 export const admin = false;
 export const botAdmin = false;
 
@@ -148,6 +156,39 @@ async function downloadQuoted(media: any, type: string): Promise<Buffer> {
     return Buffer.concat(chunks);
 }
 
+async function downloadBrat(text: string, endpoint: string): Promise<{ buffer: Buffer; ext: string; animated: boolean }> {
+    const url = new URL(`https://api.delirius.online/canvas/${endpoint}`);
+    url.searchParams.set('text', text);
+    const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+    if (!response.ok) throw new Error(`La API respondió con HTTP ${response.status}`);
+    if (!response.body) throw new Error('La API no devolvió contenido');
+    const limit = 10 * 1024 * 1024;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+        size += chunk.length;
+        if (size > limit) throw new Error('La respuesta de la API supera 10 MB');
+        chunks.push(Buffer.from(chunk));
+    }
+    const buffer = Buffer.concat(chunks);
+    const type = await fileTypeFromBuffer(buffer);
+    const allowed = endpoint === 'bratvideo'
+        ? ['video/mp4', 'video/webm', 'image/gif', 'image/webp']
+        : ['image/png', 'image/jpeg', 'image/webp'];
+    if (!type || !allowed.includes(type.mime)) throw new Error('La API no devolvió un formato multimedia compatible');
+    return { buffer, ext: type.ext, animated: endpoint === 'bratvideo' };
+}
+
+async function makeSticker(buffer: Buffer, ext: string, animated: boolean, shape: string | undefined, effects: string[], packname: string, author: string, files: string[]): Promise<Buffer> {
+    const stamp = randomUUID();
+    const inputPath = path.join(tmpDir, `in-${stamp}.${ext}`);
+    const outputPath = path.join(tmpDir, `out-${stamp}.webp`);
+    files.push(inputPath, outputPath);
+    fs.writeFileSync(inputPath, buffer);
+    await runFFmpeg(inputPath, outputPath, buildFilters(shape, effects), animated);
+    return addExif(fs.readFileSync(outputPath), packname, author);
+}
+
 export default async function (sock: any, msg: any, extra: any) {
     const args: string[] = extra.args || [];
     const prefix = (global as any).prefix?.[0] || '.';
@@ -157,6 +198,19 @@ export default async function (sock: any, msg: any, extra: any) {
         const nameBot = (global as any).namebot || 'Yae Miku Bot';
         const creador = (global as any).nmcreador || '';
         const userName = msg.pushName || 'Usuario';
+
+        const bratCommand = String(extra.command || '').toLowerCase();
+        if (['brat', 'bratv', 'bratvideo', 'bratanime'].includes(bratCommand)) {
+            const text = (typeof extra.rawArgs === 'string' ? extra.rawArgs : args.join(' ')).trim();
+            if (!text) {
+                return msg.reply(`🪷 *BRAT*\n\n🍓 Escribe el texto para tu sticker.\n> ${prefix}${bratCommand} Hola Yae`);
+            }
+            const endpoint = bratCommand === 'bratv' ? 'bratvideo' : bratCommand;
+            const media = await downloadBrat(text, endpoint);
+            const sticker = await makeSticker(media.buffer, media.ext, media.animated, undefined, [], nameBot, `Creador: ${creador}\nUsuario: ${userName}`, files);
+            await sock.sendMessage(msg.chat || msg.from, { sticker }, { quoted: msg });
+            return;
+        }
 
         if (args[0] === '-list' || args[0] === 'help') {
             return msg.reply(helpText(prefix));
@@ -239,26 +293,16 @@ export default async function (sock: any, msg: any, extra: any) {
             );
         }
 
-        const stamp = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        const inputPath = path.join(tmpDir, `in-${stamp}.${ext}`);
-        const outputPath = path.join(tmpDir, `out-${stamp}.webp`);
-        files.push(inputPath, outputPath);
-
-        fs.writeFileSync(inputPath, inputBuffer);
-
-        const vf = buildFilters(shape, effects);
-        await runFFmpeg(inputPath, outputPath, vf, isAnimated);
-
-        const webpBuffer = fs.readFileSync(outputPath);
-        const finalBuffer = await addExif(webpBuffer, packname, author);
+        const finalBuffer = await makeSticker(inputBuffer, ext, isAnimated, shape, effects, packname, author, files);
 
         await sock.sendMessage(msg.chat, { sticker: finalBuffer }, { quoted: msg });
     } catch (error: any) {
         console.error('[STICKER ERROR]:', error);
+        const brat = ['brat', 'bratv', 'bratvideo', 'bratanime'].includes(String(extra.command || '').toLowerCase());
         return msg.reply(
             `⚠️ *ERROR AL CREAR STICKER*\n\n` +
             `🍥 ${error?.message?.slice(0, 200) || 'Error desconocido'}\n\n` +
-            `📌 Verifica que ffmpeg esté instalado.`
+            (brat ? '📌 Comprueba la API de Delirius y que ffmpeg esté instalado.' : '📌 Verifica que ffmpeg esté instalado.')
         );
     } finally {
         for (const f of files) {

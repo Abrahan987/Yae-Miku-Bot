@@ -249,12 +249,15 @@ La bienvenida incluye la foto del usuario; si no está disponible, utiliza la fo
 | Comando | Qué hace |
 |---|---|
 | `sticker` · `toimg` · `tourl` | Stickers y conversiones |
+| `brat <texto>` · `bratv <texto>` · `bratvideo <texto>` · `bratanime <texto>` | Stickers brat; `bratv` y `bratvideo` son animados |
 | `hd` · `enhance` · `remini` | Mejora de imagen |
 | `ia` · `chatgpt` | Chat con IA |
 | `translate` | Traductor |
 | `emojimix` | Mezcla de emojis |
 | `userinfo` · `get` · `getpic` · `read` · `say` · `gitclone` | Herramientas varias |
 | `report` · `reportar` · `error` | Envía un reporte al owner |
+
+Los comandos brat envían el texto a la API de Delirius y requieren `ffmpeg`.
 
 </details>
 
