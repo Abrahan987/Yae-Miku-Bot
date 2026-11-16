@@ -35,7 +35,6 @@ const client = axios.create({
 });
 
 const searchCache = new LRUCache<string, any>({ max: 300, ttl: 1000 * 60 * 60 });
-const searchInflight = new Map<string, Promise<any>>();
 const audioCache = new LRUCache<string, AudioResult>({
     maxSize: 200 * 1024 * 1024,
     sizeCalculation: (a) => a.buffer.length,
@@ -62,74 +61,84 @@ const minBytesFor = (seconds?: number) =>
         ? Math.max(UNKNOWN_DURATION_MIN_BYTES, seconds * BYTES_PER_SECOND_MIN)
         : UNKNOWN_DURATION_MIN_BYTES;
 
-const PROVIDERS: Record<string, (url: string, signal: AbortSignal) => Promise<Link>> = {
-    ryuzei: async (url, signal) => {
+const PROVIDERS: Record<string, (url: string, query: string) => Promise<Link>> = {
+    ryuzei: async (url) => {
         const { data } = await client.get('https://api.ryuzei.xyz/download/ytmp3', {
             params: { url },
-            timeout: 30000, signal
+            timeout: 30000
         });
         if (!data?.status || !isLink(data?.data?.download)) throw new Error('sin enlace');
         return { dl: data.data.download, title: data.data.title };
     },
 
-    lempi: async (url, signal) => {
+    lempi: async (url) => {
         const { data } = await client.get('https://api.lempi.lat/dl/yta', {
             params: { url, apikey: LEMPI_KEY },
-            timeout: 30000, signal
+            timeout: 30000
         });
         if (!data?.status || !isLink(data?.descarga?.url)) throw new Error('sin enlace');
         return { dl: data.descarga.url, title: data.descarga.archivo };
     },
 
-    puruboy: async (url, signal) => {
+    puruboy: async (url) => {
         const { data } = await client.post(
             'https://puruboy-api.vercel.app/api/downloader/ytmp3',
             { url },
-            { timeout: 30000, signal }
+            { timeout: 30000 }
         );
         const r = data?.result;
         if (!isLink(r?.download_url)) throw new Error('sin enlace');
         return { dl: r.download_url, title: r.title };
     },
 
-    anabotUrl: async (url, signal) => {
+    anabotUrl: async (url) => {
         const { data } = await client.get('https://anabot.my.id/api/download/ytmp3', {
             params: { url, apikey: ANABOT_KEY },
-            timeout: 30000, signal
+            timeout: 30000
         });
         const r = data?.data?.result;
         if (!r?.success || !isLink(r.urls)) throw new Error('sin enlace');
         return { dl: r.urls, title: r.metadata?.title };
     },
 
-    siputzxV1: async (url, signal) => {
+    anabotQuery: async (_url, query) => {
+        const { data } = await client.get('https://anabot.my.id/api/download/playmusic', {
+            params: { query, apikey: ANABOT_KEY },
+            timeout: 30000
+        });
+        const r = data?.data?.result;
+        if (!r?.success || !isLink(r.urls)) throw new Error('sin enlace');
+        return { dl: r.urls, title: r.metadata?.title };
+    },
+
+    siputzxV1: async (url) => {
         const { data } = await client.get('https://api.siputzx.my.id/api/d/ytmp3', {
             params: { url },
-            timeout: 30000, signal
+            timeout: 30000
         });
         if (!data?.status || !isLink(data?.result?.downloadUrl)) throw new Error('sin enlace');
         return { dl: data.result.downloadUrl, title: data.result.title };
     },
 
-    siputzxV2: async (url, signal) => {
+    siputzxV2: async (url) => {
         const { data } = await client.get('https://api.siputzx.my.id/api/d/ytmp3v2', {
             params: { url },
-            timeout: 30000, signal
+            timeout: 30000
         });
         if (!data?.status || !isLink(data?.data?.dl)) throw new Error('sin enlace');
         return { dl: data.data.dl, title: data.data.title };
     },
 
-    nexevo: async (url, signal) => {
+    nexevo: async (url) => {
         const { data } = await client.get('https://nexevo-api.vercel.app/download/y', {
             params: { url },
-            timeout: 30000, signal
+            timeout: 30000
         });
         if (!data?.status || !isLink(data?.result?.url)) throw new Error('sin enlace');
         return { dl: data.result.url, title: data.result.info?.title };
     },
 
-    saveTube: async (url, signal) => {
+    saveTube: async (url) => {
         const id = getVideoId(url);
         if (!id) throw new Error('id invalido');
 
@@ -139,8 +148,7 @@ const PROVIDERS: Record<string, (url: string, signal: AbortSignal) => Promise<Li
                 origin: 'https://yt.savetube.me',
                 'user-agent': 'Mozilla/5.0 (Android 15; Mobile; SM-F958; rv:130.0) Gecko/130.0 Firefox/130.0'
             },
-            timeout: 30000,
-            signal
+            timeout: 30000
         };
 
         const { data: cdnRes } = await client.get('https://media.savetube.vip/api/random-cdn', opts);
@@ -173,9 +181,9 @@ const PROVIDERS: Record<string, (url: string, signal: AbortSignal) => Promise<Li
         return { dl: link, title: dec.title };
     },
 
-    cnv: async (url, signal) => {
+    cnv: async (url) => {
         const headers = { origin: 'https://frame.y2meta-uk.com', 'user-agent': 'Mozilla/5.0' };
-        const { data: k } = await client.get('https://cnv.cx/v2/sanity/key', { headers, timeout: 15000, signal });
+        const { data: k } = await client.get('https://cnv.cx/v2/sanity/key', { headers, timeout: 15000 });
         if (!k?.key) throw new Error('sin key');
 
         const body = new URLSearchParams({
@@ -186,7 +194,7 @@ const PROVIDERS: Record<string, (url: string, signal: AbortSignal) => Promise<Li
         });
         const { data } = await client.post('https://cnv.cx/v2/converter', body.toString(), {
             headers: { ...headers, key: k.key, 'content-type': 'application/x-www-form-urlencoded' },
-            timeout: 40000, signal
+            timeout: 40000
         });
         if (!isLink(data?.url)) throw new Error('sin enlace');
         return { dl: data.url, title: data.filename };
@@ -234,14 +242,13 @@ async function downloadValidated(link: string, minBytes: number, signal: AbortSi
     };
 }
 
-function raceProviders(url: string, minBytes: number) {
+function raceProviders(url: string, query: string, minBytes: number) {
     const controller = new AbortController();
 
     const race = Promise.any(
         Object.entries(PROVIDERS).map(async ([name, run]) => {
             try {
-                const link = await run(url, controller.signal);
-                if (controller.signal.aborted) throw new Error('descarga cancelada');
+                const link = await run(url, query);
                 const audio = await downloadValidated(link.dl, minBytes, controller.signal);
                 return { audio, provider: name };
             } catch (e: any) {
@@ -259,13 +266,13 @@ function raceProviders(url: string, minBytes: number) {
     return race.finally(() => controller.abort());
 }
 
-async function fetchAudio(videoId: string, seconds?: number): Promise<AudioResult> {
+async function fetchAudio(videoId: string, query: string, seconds?: number): Promise<AudioResult> {
     const url = `https://youtu.be/${videoId}`;
     let lastError: any;
 
     for (let attempt = 0; attempt < 2; attempt++) {
         try {
-            const { audio, provider } = await raceProviders(url, minBytesFor(seconds));
+            const { audio, provider } = await raceProviders(url, query, minBytesFor(seconds));
             console.log(`[PLAY] Gano ${provider} (${audio.buffer.length} bytes)`);
             return audio;
         } catch (e: any) {
@@ -276,14 +283,14 @@ async function fetchAudio(videoId: string, seconds?: number): Promise<AudioResul
     throw lastError;
 }
 
-function getAudio(videoId: string, seconds?: number): Promise<AudioResult> {
+function getAudio(videoId: string, query: string, seconds?: number): Promise<AudioResult> {
     const cached = audioCache.get(videoId);
     if (cached) return Promise.resolve(cached);
 
     const running = inflight.get(videoId);
     if (running) return running;
 
-    const job = fetchAudio(videoId, seconds)
+    const job = fetchAudio(videoId, query, seconds)
         .then((audio) => {
             audioCache.set(videoId, audio);
             return audio;
@@ -296,6 +303,7 @@ function getAudio(videoId: string, seconds?: number): Promise<AudioResult> {
 
 async function getValidAudio(
     videoId: string,
+    query: string,
     seconds: number | undefined,
     first: Promise<AudioResult>
 ) {
@@ -305,7 +313,7 @@ async function getValidAudio(
     if (!enough(audio)) {
         console.error(`[PLAY] Audio corto: ${audio.buffer.length} bytes para ${seconds} s. Reintentando...`);
         audioCache.delete(videoId);
-        audio = await getAudio(videoId, seconds);
+        audio = await getAudio(videoId, query, seconds);
         if (!enough(audio)) {
             audioCache.delete(videoId);
             throw new Error('Ninguna API entrego el audio completo');
@@ -321,18 +329,15 @@ async function findVideo(text: string) {
     const cached = searchCache.get(key);
     if (cached) return cached;
 
-    const running = searchInflight.get(key);
-    if (running) return running;
-
-    const job = (async () => {
-        const video = id
-            ? await ytsearch({ videoId: id })
-            : (await ytsearch(text)).videos?.[0] || null;
-        if (video) searchCache.set(key, video);
-        return video;
-    })().finally(() => searchInflight.delete(key));
-    searchInflight.set(key, job);
-    return job;
+    let video: any = null;
+    if (id) {
+        video = await ytsearch({ videoId: id });
+    } else {
+        const result = await ytsearch(text);
+        video = result.videos?.[0] || null;
+    }
+    if (video) searchCache.set(key, video);
+    return video;
 }
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
@@ -348,8 +353,8 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
     try {
         const urlId = getVideoId(text);
-        const early = urlId ? getAudio(urlId) : null;
-        early?.catch((error) => console.error('[PLAY] Descarga anticipada:', error?.message || error));
+        const early = urlId ? getAudio(urlId, text) : null;
+        early?.catch(() => {});
 
         const video = await findVideo(text);
 
@@ -357,12 +362,8 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             return msg.reply(`🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`);
         }
 
-        const audioPromise = early && video.videoId === urlId
-            ? early
-            : getAudio(video.videoId, video.seconds);
-        if (audioPromise !== early) {
-            audioPromise.catch((error) => console.error('[PLAY] Descarga:', error?.message || error));
-        }
+        const audioPromise = early || getAudio(video.videoId, text, video.seconds);
+        audioPromise.catch(() => {});
 
         const title = video.title || 'YouTube Audio';
         const channel = video.author?.name || 'Desconocido';
@@ -383,25 +384,19 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
 
         try {
             if (imageUrl) {
-                const thumbnail = await client.get(imageUrl, {
-                    responseType: 'arraybuffer',
-                    timeout: 4000,
-                    maxContentLength: 2 * 1024 * 1024
-                });
                 await sock.sendMessage(
                     msg.from,
-                    { image: Buffer.from(thumbnail.data), caption: infoText },
+                    { image: { url: imageUrl }, caption: infoText },
                     { quoted: msg }
                 );
             } else {
                 await msg.reply(infoText);
             }
-        } catch (error: any) {
-            console.error('[PLAY] Miniatura o envío de información:', error?.message || error);
-            await msg.reply(infoText);
+        } catch {
+            await msg.reply(infoText).catch(() => {});
         }
 
-        const audio = await getValidAudio(video.videoId, video.seconds, audioPromise);
+        const audio = await getValidAudio(video.videoId, text, video.seconds, audioPromise);
 
         await sock.sendMessage(
             msg.from,

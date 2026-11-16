@@ -64,25 +64,24 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             );
         }
 
-        const [, videoResponse] = await Promise.all([
-            msg.reply(
-                `🍓 𝙸𝙽𝚂𝚃𝙰𝙶𝚁𝙰𝙼\n` +
-                `─────── ❀ ───────\n\n` +
-                `🪷 𝙰𝚄𝚃𝙾𝚁 ── ${data.author || 'Desconocido'}\n` +
-                `🍥 𝚃𝙸𝙿𝙾 ── 𝚅Í𝙳𝙴𝙾\n\n` +
-                `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...`
-            ),
-            axios.get(video.url, {
-                responseType: 'arraybuffer',
-                timeout: 120000,
-                maxContentLength: 100 * 1024 * 1024,
-                maxBodyLength: 100 * 1024 * 1024,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0',
-                    'Accept': 'video/mp4,video/*,*/*'
-                }
-            })
-        ]);
+        await msg.reply(
+            `🍓 𝙸𝙽𝚂𝚃𝙰𝙶𝚁𝙰𝙼\n` +
+            `─────── ❀ ───────\n\n` +
+            `🪷 𝙰𝚄𝚃𝙾𝚁 ── ${data.author || 'Desconocido'}\n` +
+            `🍥 𝚃𝙸𝙿𝙾 ── 𝚅Í𝙳𝙴𝙾\n\n` +
+            `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...`
+        );
+
+        const videoResponse = await axios.get(video.url, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            maxContentLength: 100 * 1024 * 1024,
+            maxBodyLength: 100 * 1024 * 1024,
+            headers: {
+                'User-Agent': 'Mozilla/5.0',
+                'Accept': 'video/mp4,video/*,*/*'
+            }
+        });
 
         const videoBuffer = Buffer.from(videoResponse.data);
 
