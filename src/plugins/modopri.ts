@@ -2,7 +2,7 @@ import { getActiveBots } from '../lib/subbot.ts';
 import { isPrivateModeEnabled, setPrivateMode, isSubbotPrivateModeOwner } from '../lib/private_mode.ts';
 import { deco } from '../lib/perms.ts';
 
-export const command = ['modopri', 'antipri', 'antiprivadi'];
+export const command = ['modopri', 'antipri', 'antiprivado'];
 export const category = 'socket';
 export const description = 'Restringe los mensajes privados de tu subbot.';
 
