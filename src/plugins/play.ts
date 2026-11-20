@@ -1,347 +1,304 @@
 import axios from 'axios';
 import ytsearch from 'yt-search';
-import crypto from 'node:crypto';
+import { LRUCache } from 'lru-cache';
+import PQueue from 'p-queue';
+import { createWriteStream, rmSync } from 'node:fs';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import http from 'node:http';
 import https from 'node:https';
-import { LRUCache } from 'lru-cache';
 
 export const command = ['play', 'mp3', 'ytmp3', 'ytaudio', 'playaudio'];
 export const category = 'descargas';
 export const description = 'Busca y descarga canciones de YouTube en formato MP3.';
 
-const LEMPI_KEY = process.env.LEMPI_KEY || 'montekey28';
-const ANABOT_KEY = process.env.ANABOT_KEY || 'freeApikey';
-const SAVETUBE_KEY = 'C5D58EF67A7584E4A29F6C35BBC4EB12';
-const UA = 'Mozilla/5.0 (Linux; Android 15; Pixel 7) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36';
-const MAX_BYTES = 100 * 1024 * 1024;
-const UNKNOWN_DURATION_MIN_BYTES = 300 * 1024;
-const BYTES_PER_SECOND_MIN = 6000;
+const MB = 1024 * 1024;
+const MAX_AUDIO_BYTES = 40 * MB;
+const MAX_CACHE_BYTES = 120 * MB;
+const UA = 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36';
 
-interface Link {
+interface AudioLink {
     dl: string;
     title?: string;
 }
 
-interface AudioResult {
-    buffer: Buffer;
-    mimetype: string;
-    ext: string;
+interface AudioFile {
+    path: string;
+    bytes: number;
+    refs: number;
+    evicted: boolean;
+}
+
+interface VideoInfo {
+    videoId: string;
+    title?: string;
+    author?: { name?: string };
+    views?: number;
+    seconds?: number;
+    timestamp?: string;
+    thumbnail?: string;
+    image?: string;
 }
 
 const client = axios.create({
-    httpAgent: new http.Agent({ keepAlive: true, maxSockets: 30 }),
-    httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 30 }),
-    headers: { 'User-Agent': UA, Accept: 'application/json' }
+    httpAgent: new http.Agent({ keepAlive: true, maxSockets: 8 }),
+    httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 8 }),
+    headers: { 'User-Agent': UA },
+    maxRedirects: 4
 });
 
-const searchCache = new LRUCache<string, any>({ max: 300, ttl: 1000 * 60 * 60 });
-const audioCache = new LRUCache<string, AudioResult>({
-    maxSize: 200 * 1024 * 1024,
-    sizeCalculation: (a) => a.buffer.length,
-    ttl: 1000 * 60 * 60
-});
-const inflight = new Map<string, Promise<AudioResult>>();
+const searchCache = new LRUCache<string, VideoInfo>({ max: 250, ttl: 30 * 60_000 });
+const queue = new PQueue({ concurrency: 2 });
+const inflight = new Map<string, Promise<AudioFile>>();
+let temporaryDirectory: Promise<string> | undefined;
+let temporaryPath: string | undefined;
 
-const cleanTitle = (title: string) =>
-    title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
+const unlinkQuietly = (file: string) => { void fs.unlink(file).catch(() => {}); };
 
-const formatNumber = (value: any) =>
-    typeof value !== 'number' ? 'N/A' : value.toLocaleString('es-CO');
-
-const getVideoId = (text: string) => {
-    const raw = text.trim();
-    if (/^[\w-]{11}$/.test(raw)) return raw;
-    return raw.match(/(?:youtu\.be\/|v=|shorts\/|embed\/|live\/|\/v\/)([\w-]{11})/i)?.[1] || null;
-};
-
-const isLink = (v: any): v is string => typeof v === 'string' && /^https?:\/\//i.test(v);
-
-const minBytesFor = (seconds?: number) =>
-    seconds && seconds > 0
-        ? Math.max(UNKNOWN_DURATION_MIN_BYTES, seconds * BYTES_PER_SECOND_MIN)
-        : UNKNOWN_DURATION_MIN_BYTES;
-
-const PROVIDERS: Record<string, (url: string, query: string) => Promise<Link>> = {
-    ryuzei: async (url) => {
-        const { data } = await client.get('https://api.ryuzei.xyz/download/ytmp3', {
-            params: { url },
-            timeout: 30000
-        });
-        if (!data?.status || !isLink(data?.data?.download)) throw new Error('sin enlace');
-        return { dl: data.data.download, title: data.data.title };
-    },
-
-    lempi: async (url) => {
-        const { data } = await client.get('https://api.lempi.lat/dl/yta', {
-            params: { url, apikey: LEMPI_KEY },
-            timeout: 30000
-        });
-        if (!data?.status || !isLink(data?.descarga?.url)) throw new Error('sin enlace');
-        return { dl: data.descarga.url, title: data.descarga.archivo };
-    },
-
-    puruboy: async (url) => {
-        const { data } = await client.post(
-            'https://puruboy-api.vercel.app/api/downloader/ytmp3',
-            { url },
-            { timeout: 30000 }
-        );
-        const r = data?.result;
-        if (!isLink(r?.download_url)) throw new Error('sin enlace');
-        return { dl: r.download_url, title: r.title };
-    },
-
-    anabotUrl: async (url) => {
-        const { data } = await client.get('https://anabot.my.id/api/download/ytmp3', {
-            params: { url, apikey: ANABOT_KEY },
-            timeout: 30000
-        });
-        const r = data?.data?.result;
-        if (!r?.success || !isLink(r.urls)) throw new Error('sin enlace');
-        return { dl: r.urls, title: r.metadata?.title };
-    },
-
-    anabotQuery: async (_url, query) => {
-        const { data } = await client.get('https://anabot.my.id/api/download/playmusic', {
-            params: { query, apikey: ANABOT_KEY },
-            timeout: 30000
-        });
-        const r = data?.data?.result;
-        if (!r?.success || !isLink(r.urls)) throw new Error('sin enlace');
-        return { dl: r.urls, title: r.metadata?.title };
-    },
-
-    siputzxV1: async (url) => {
-        const { data } = await client.get('https://api.siputzx.my.id/api/d/ytmp3', {
-            params: { url },
-            timeout: 30000
-        });
-        if (!data?.status || !isLink(data?.result?.downloadUrl)) throw new Error('sin enlace');
-        return { dl: data.result.downloadUrl, title: data.result.title };
-    },
-
-    siputzxV2: async (url) => {
-        const { data } = await client.get('https://api.siputzx.my.id/api/d/ytmp3v2', {
-            params: { url },
-            timeout: 30000
-        });
-        if (!data?.status || !isLink(data?.data?.dl)) throw new Error('sin enlace');
-        return { dl: data.data.dl, title: data.data.title };
-    },
-
-    nexevo: async (url) => {
-        const { data } = await client.get('https://nexevo-api.vercel.app/download/y', {
-            params: { url },
-            timeout: 30000
-        });
-        if (!data?.status || !isLink(data?.result?.url)) throw new Error('sin enlace');
-        return { dl: data.result.url, title: data.result.info?.title };
-    },
-
-    saveTube: async (url) => {
-        const id = getVideoId(url);
-        if (!id) throw new Error('id invalido');
-
-        const opts = {
-            headers: {
-                'content-type': 'application/json',
-                origin: 'https://yt.savetube.me',
-                'user-agent': 'Mozilla/5.0 (Android 15; Mobile; SM-F958; rv:130.0) Gecko/130.0 Firefox/130.0'
-            },
-            timeout: 30000
-        };
-
-        const { data: cdnRes } = await client.get('https://media.savetube.vip/api/random-cdn', opts);
-        const cdn = cdnRes?.cdn;
-        if (!cdn) throw new Error('sin cdn');
-
-        const info = await client.post(
-            `https://${cdn}/v2/info`,
-            { url: `https://www.youtube.com/watch?v=${id}` },
-            opts
-        );
-
-        const raw = Buffer.from(info.data.data, 'base64');
-        const decipher = crypto.createDecipheriv(
-            'aes-128-cbc',
-            Buffer.from(SAVETUBE_KEY, 'hex'),
-            raw.subarray(0, 16)
-        );
-        const dec = JSON.parse(
-            Buffer.concat([decipher.update(raw.subarray(16)), decipher.final()]).toString()
-        );
-
-        const dl = await client.post(
-            `https://${cdn}/download`,
-            { id, downloadType: 'audio', quality: '128', key: dec.key },
-            opts
-        );
-        const link = dl.data?.data?.downloadUrl;
-        if (!isLink(link)) throw new Error('sin enlace');
-        return { dl: link, title: dec.title };
-    },
-
-    cnv: async (url) => {
-        const headers = { origin: 'https://frame.y2meta-uk.com', 'user-agent': 'Mozilla/5.0' };
-        const { data: k } = await client.get('https://cnv.cx/v2/sanity/key', { headers, timeout: 15000 });
-        if (!k?.key) throw new Error('sin key');
-
-        const body = new URLSearchParams({
-            link: url,
-            format: 'mp3',
-            audioBitrate: '128',
-            filenameStyle: 'pretty'
-        });
-        const { data } = await client.post('https://cnv.cx/v2/converter', body.toString(), {
-            headers: { ...headers, key: k.key, 'content-type': 'application/x-www-form-urlencoded' },
-            timeout: 40000
-        });
-        if (!isLink(data?.url)) throw new Error('sin enlace');
-        return { dl: data.url, title: data.filename };
+const audioCache = new LRUCache<string, AudioFile>({
+    maxSize: MAX_CACHE_BYTES,
+    sizeCalculation: file => file.bytes,
+    ttl: 15 * 60_000,
+    ttlAutopurge: true,
+    dispose: file => {
+        file.evicted = true;
+        if (file.refs === 0) unlinkQuietly(file.path);
     }
-};
+});
 
-async function downloadValidated(link: string, minBytes: number, signal: AbortSignal): Promise<AudioResult> {
-    const res = await client.get(link, {
-        responseType: 'stream',
-        timeout: 120000,
-        signal,
-        maxContentLength: MAX_BYTES
+async function getTemporaryDirectory(): Promise<string> {
+    temporaryDirectory ??= fs.mkdtemp(join(tmpdir(), 'yae-play-')).then(dir => {
+        temporaryPath = dir;
+        return dir;
+    }).catch(error => {
+        temporaryDirectory = undefined;
+        throw error;
+    });
+    return temporaryDirectory;
+}
+
+process.once('exit', () => {
+    if (temporaryPath) {
+        try { rmSync(temporaryPath, { recursive: true, force: true }); } catch {}
+    }
+});
+
+function getVideoId(input: string): string | null {
+    const text = input.trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(text)) return text;
+    try {
+        const url = new URL(text);
+        const host = url.hostname.toLowerCase();
+        if (host === 'youtu.be' || host === 'www.youtu.be') {
+            const id = url.pathname.split('/')[1];
+            return /^[a-zA-Z0-9_-]{11}$/.test(id || '') ? id : null;
+        }
+        if (!['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(host)) return null;
+        const id = url.searchParams.get('v') || url.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]{11})/)?.[1];
+        return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+    } catch {
+        return null;
+    }
+}
+
+function validDownloadUrl(value: unknown): value is string {
+    if (typeof value !== 'string') return false;
+    try {
+        const url = new URL(value);
+        if (!['http:', 'https:'].includes(url.protocol)) return false;
+        if (url.username || url.password) return false;
+        const host = url.hostname.toLowerCase();
+        if (host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '::1' || host === '[::1]') return false;
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function cleanTitle(value: string): string {
+    return value.replace(/[\\/:*?"<>|\x00-\x1f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100) || 'YouTube Audio';
+}
+
+function errorText(error: any): string {
+    return error?.response?.status ? `HTTP ${error.response.status}` : String(error?.message || error);
+}
+
+function minAudioBytes(seconds?: number): number {
+    if (!seconds || !Number.isFinite(seconds) || seconds <= 0) return 32 * 1024;
+    return Math.max(32 * 1024, Math.min(MAX_AUDIO_BYTES, Math.floor(seconds * 5200)));
+}
+
+function isMp3(bytes: Buffer): boolean {
+    if (bytes.subarray(0, 3).toString() === 'ID3') return true;
+    for (let i = 0; i < bytes.length - 1; i++) {
+        if (bytes[i] === 0xff && (bytes[i + 1] & 0xe0) === 0xe0 && (bytes[i + 1] & 0x18) !== 0x08) return true;
+    }
+    return false;
+}
+
+async function stellar(endpoint: 'ytmp3v2' | 'ytmp3v3', url: string): Promise<AudioLink> {
+    const key = String(global.key || '').trim();
+    if (!key) throw new Error('global.key no está configurada');
+
+    const { data } = await client.get(`https://api.stellarwa.xyz/dl/${endpoint}`, {
+        params: { url, key },
+        timeout: 35_000,
+        headers: { Accept: 'application/json' }
     });
 
-    const type = String(res.headers['content-type'] || '');
-    const declared = Number(res.headers['content-length'] || 0);
+    const result = data?.data || data?.result || data;
+    const dl = [result?.dl, result?.download, result?.downloadUrl, result?.url, data?.dl].find(validDownloadUrl);
+    if (data?.status === false || !dl) throw new Error('Stellar no entregó un MP3 válido');
+    return { dl, title: result?.title };
+}
 
-    if (/text|json|html/i.test(type) || (declared && declared < minBytes)) {
-        res.data.destroy();
-        throw new Error(`archivo no valido (tipo=${type || '?'}, bytes=${declared || '?'})`);
+async function ryuzei(url: string): Promise<AudioLink> {
+    const { data } = await client.get('https://api.ryuzei.xyz/download/ytmp3', {
+        params: { url },
+        timeout: 35_000,
+        headers: { Accept: 'application/json' }
+    });
+    const result = data?.data || data?.result || data;
+    const dl = [result?.download, result?.dl, result?.url].find(validDownloadUrl);
+    if (data?.status === false || !dl) throw new Error('Ryuzei no entregó un MP3 válido');
+    return { dl, title: result?.title };
+}
+
+async function downloadMp3(link: string, videoId: string, seconds?: number): Promise<AudioFile> {
+    const directory = await getTemporaryDirectory();
+    const file = join(directory, `${videoId}-${randomUUID()}.mp3`);
+    const response = await client.get(link, {
+        responseType: 'stream',
+        timeout: 100_000,
+        headers: { Accept: 'audio/mpeg,audio/*,*/*' }
+    });
+
+    const type = String(response.headers['content-type'] || '').toLowerCase();
+    const length = Number(response.headers['content-length'] || 0);
+    const stream = response.data;
+
+    if (/text\/|application\/(?:json|xml)|html/.test(type) || length > MAX_AUDIO_BYTES) {
+        stream.destroy();
+        throw new Error('El servidor devolvió un archivo inválido o demasiado grande');
     }
 
-    const chunks: Buffer[] = [];
     let size = 0;
-    for await (const chunk of res.data) {
-        chunks.push(chunk);
-        size += chunk.length;
-        if (size > MAX_BYTES) {
-            res.data.destroy();
-            throw new Error('archivo demasiado grande');
+    const limiter = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+            size += chunk.length;
+            if (size > MAX_AUDIO_BYTES) callback(new Error('Audio superior a 40 MB'));
+            else callback(null, chunk);
         }
-    }
+    });
 
-    const buffer = Buffer.concat(chunks);
-    if (buffer.length < minBytes) throw new Error(`audio demasiado corto (${buffer.length} bytes)`);
-    if (declared && buffer.length < declared) {
-        throw new Error(`descarga incompleta (${buffer.length} de ${declared} bytes)`);
-    }
-
-    const isM4a = /mp4|m4a/i.test(type);
-    return {
-        buffer,
-        mimetype: isM4a ? 'audio/mp4' : 'audio/mpeg',
-        ext: isM4a ? 'm4a' : 'mp3'
-    };
-}
-
-function raceProviders(url: string, query: string, minBytes: number) {
-    const controller = new AbortController();
-
-    const race = Promise.any(
-        Object.entries(PROVIDERS).map(async ([name, run]) => {
-            try {
-                const link = await run(url, query);
-                const audio = await downloadValidated(link.dl, minBytes, controller.signal);
-                return { audio, provider: name };
-            } catch (e: any) {
-                if (!controller.signal.aborted) {
-                    console.error(
-                        `[PLAY] ${name}:`,
-                        e?.response?.status ? `HTTP ${e.response.status}` : e?.message || e
-                    );
-                }
-                throw e;
-            }
-        })
-    );
-
-    return race.finally(() => controller.abort());
-}
-
-async function fetchAudio(videoId: string, query: string, seconds?: number): Promise<AudioResult> {
-    const url = `https://youtu.be/${videoId}`;
-    let lastError: any;
-
-    for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+        await pipeline(stream, limiter, createWriteStream(file, { flags: 'wx' }));
+        if (size < minAudioBytes(seconds)) throw new Error('Audio incompleto o demasiado pequeño');
+        if (length && size !== length) throw new Error('La descarga está incompleta');
+        const handle = await fs.open(file, 'r');
+        const header = Buffer.alloc(4096);
+        let read = 0;
         try {
-            const { audio, provider } = await raceProviders(url, query, minBytesFor(seconds));
-            console.log(`[PLAY] Gano ${provider} (${audio.buffer.length} bytes)`);
-            return audio;
-        } catch (e: any) {
-            lastError = e;
-            console.error(`[PLAY] Intento ${attempt + 1}: todas las APIs fallaron`);
+            const data = await handle.read(header, 0, header.length, 0);
+            read = data.bytesRead;
+        } finally {
+            await handle.close();
         }
+        if (!isMp3(header.subarray(0, read))) throw new Error('La descarga no contiene un MP3 válido');
+        return { path: file, bytes: size, refs: 0, evicted: false };
+    } catch (error) {
+        unlinkQuietly(file);
+        throw error;
     }
-    throw lastError;
 }
 
-function getAudio(videoId: string, query: string, seconds?: number): Promise<AudioResult> {
-    const cached = audioCache.get(videoId);
-    if (cached) return Promise.resolve(cached);
+async function fetchAudio(videoId: string, seconds?: number): Promise<AudioFile> {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const providers = [
+        { name: 'Stellar V2', run: () => stellar('ytmp3v2', url) },
+        { name: 'Stellar V3', run: () => stellar('ytmp3v3', url) },
+        { name: 'Ryuzei', run: () => ryuzei(url) }
+    ];
 
-    const running = inflight.get(videoId);
-    if (running) return running;
+    for (const provider of providers) {
+        try {
+            const result = await provider.run();
+            const audio = await downloadMp3(result.dl, videoId, seconds);
+            console.log(`[PLAY] ${provider.name}: audio listo (${(audio.bytes / MB).toFixed(2)} MB)`);
+            return audio;
+        } catch (error) {
+            console.error(`[PLAY] ${provider.name}: ${errorText(error)}`);
+        }
+    }
 
-    const job = fetchAudio(videoId, query, seconds)
-        .then((audio) => {
+    throw new Error('Stellar V2, Stellar V3 y Ryuzei no lograron descargar el audio');
+}
+
+async function acquireAudio(videoId: string, seconds?: number): Promise<AudioFile> {
+    const saved = audioCache.get(videoId);
+    if (saved && !saved.evicted) {
+        saved.refs++;
+        return saved;
+    }
+
+    let job = inflight.get(videoId);
+    if (!job) {
+        if (queue.size >= 20) throw new Error('Hay demasiadas descargas pendientes');
+        job = queue.add(async () => {
+            const audio = await fetchAudio(videoId, seconds);
             audioCache.set(videoId, audio);
             return audio;
-        })
-        .finally(() => inflight.delete(videoId));
-
-    inflight.set(videoId, job);
-    return job;
-}
-
-async function getValidAudio(
-    videoId: string,
-    query: string,
-    seconds: number | undefined,
-    first: Promise<AudioResult>
-) {
-    let audio = await first;
-    const enough = (a: AudioResult) => !seconds || a.buffer.length >= seconds * BYTES_PER_SECOND_MIN;
-
-    if (!enough(audio)) {
-        console.error(`[PLAY] Audio corto: ${audio.buffer.length} bytes para ${seconds} s. Reintentando...`);
-        audioCache.delete(videoId);
-        audio = await getAudio(videoId, query, seconds);
-        if (!enough(audio)) {
-            audioCache.delete(videoId);
-            throw new Error('Ninguna API entrego el audio completo');
-        }
+        }) as Promise<AudioFile>;
+        inflight.set(videoId, job);
+        void job.then(
+            () => inflight.delete(videoId),
+            () => inflight.delete(videoId)
+        );
     }
+
+    const audio = await job;
+    if (audio.evicted) return acquireAudio(videoId, seconds);
+    audio.refs++;
     return audio;
 }
 
-async function findVideo(text: string) {
-    const id = getVideoId(text);
-    const key = id ? `id:${id}` : `q:${text.toLowerCase()}`;
+function releaseAudio(audio: AudioFile): void {
+    audio.refs = Math.max(0, audio.refs - 1);
+    if (audio.evicted && audio.refs === 0) unlinkQuietly(audio.path);
+}
 
-    const cached = searchCache.get(key);
+async function findVideo(query: string): Promise<VideoInfo | null> {
+    const id = getVideoId(query);
+    const cacheKey = id ? `id:${id}` : `q:${query.toLowerCase()}`;
+    const cached = searchCache.get(cacheKey);
     if (cached) return cached;
 
-    let video: any = null;
-    if (id) {
-        video = await ytsearch({ videoId: id });
-    } else {
-        const result = await ytsearch(text);
-        video = result.videos?.[0] || null;
+    let video: VideoInfo | null = null;
+    try {
+        if (id) {
+            const result = await ytsearch({ videoId: id });
+            video = result?.videoId ? result as VideoInfo : null;
+        } else {
+            const result = await ytsearch(query);
+            video = result.videos?.[0] as VideoInfo || null;
+        }
+    } catch (error) {
+        if (!id) throw error;
     }
-    if (video) searchCache.set(key, video);
+
+    if (!video && id) {
+        video = { videoId: id, title: 'YouTube Audio', thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg` };
+    }
+    if (video) searchCache.set(cacheKey, video);
     return video;
 }
 
 export default async function (sock: any, msg: any, extra: any, db: any) {
-    const text = extra.args.join(' ').trim();
+    const text = (extra.args || []).join(' ').trim();
 
     if (!text) {
         return msg.reply(
@@ -351,24 +308,20 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         );
     }
 
+    let audio: AudioFile | undefined;
     try {
-        const urlId = getVideoId(text);
-        const early = urlId ? getAudio(urlId, text) : null;
-        early?.catch(() => {});
-
         const video = await findVideo(text);
-
         if (!video?.videoId) {
             return msg.reply(`🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`);
         }
 
-        const audioPromise = early || getAudio(video.videoId, text, video.seconds);
-        audioPromise.catch(() => {});
+        const job = acquireAudio(video.videoId, video.seconds);
+        void job.catch(() => {});
 
         const title = video.title || 'YouTube Audio';
         const channel = video.author?.name || 'Desconocido';
-        const imageUrl = video.thumbnail || video.image || null;
-
+        const imageUrl = video.thumbnail || video.image || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`;
+        const views = typeof video.views === 'number' ? video.views.toLocaleString('es-CO') : 'N/A';
         const infoText =
             `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
             `${global.namebot}\n` +
@@ -376,40 +329,33 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
             `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴\n\n` +
             `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${title}\n` +
             `🍥 𝙲𝙰𝙽𝙰𝙻 ── ${channel}\n` +
-            `🪷 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${formatNumber(video.views)}\n` +
+            `🪷 𝚅𝙸𝚂𝚃𝙰𝚂 ── ${views}\n` +
             `🍥 𝙳𝚄𝚁𝙰𝙲𝙸Ó𝙽 ── ${video.timestamp || 'N/A'}\n` +
             `🪷 𝙵𝙾𝚁𝙼𝙰𝚃𝙾 ── MP3\n\n` +
             `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝙰𝚄𝙳𝙸𝙾...\n\n` +
             `ꨄ︎ ${global.nmcreador}`;
 
         try {
-            if (imageUrl) {
-                await sock.sendMessage(
-                    msg.from,
-                    { image: { url: imageUrl }, caption: infoText },
-                    { quoted: msg }
-                );
-            } else {
-                await msg.reply(infoText);
-            }
+            await sock.sendMessage(msg.from, { image: { url: imageUrl }, caption: infoText }, { quoted: msg });
         } catch {
             await msg.reply(infoText).catch(() => {});
         }
 
-        const audio = await getValidAudio(video.videoId, text, video.seconds, audioPromise);
-
+        audio = await job;
         await sock.sendMessage(
             msg.from,
             {
-                audio: audio.buffer,
-                mimetype: audio.mimetype,
-                fileName: `${cleanTitle(title)}.${audio.ext}`,
+                audio: { url: audio.path },
+                mimetype: 'audio/mpeg',
+                fileName: `${cleanTitle(title)}.mp3`,
                 ptt: false
             },
             { quoted: msg }
         );
-    } catch (error: any) {
-        console.error('[PLAY] Fallo total:', error?.message || error);
-        await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`);
+    } catch (error) {
+        console.error('[PLAY] Fallo total:', errorText(error));
+        await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚁𝚁𝙸Ó 𝚄𝙽 𝙴𝚁𝚁𝙾𝚁 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙰𝚄𝙳𝙸𝙾`).catch(() => {});
+    } finally {
+        if (audio) releaseAudio(audio);
     }
 }
