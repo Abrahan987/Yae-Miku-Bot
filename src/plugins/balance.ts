@@ -1,15 +1,57 @@
-import { getUser, updateUser, getCooldown, setCooldown } from '../lib/database.ts';
+import { getUser, db, getCooldown } from '../lib/database.ts';
 
-export const command = ['balance', 'bal', 'saldo', 'dinero'];
+export const command = ['balance', 'bal', 'saldo', 'dinero', 'economyboard', 'eboard', 'baltop', 'einfo', 'cooldowns', 'economyinfo', 'infoeconomy'];
 export const category = 'economia';
 export const description = 'Ver tu saldo de yen.';
 export const admin = false;
 export const botAdmin = false;
 
+function formatCooldown(ms: number): string {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const days = Math.floor(total / 86400);
+    const hours = Math.floor((total % 86400) / 3600);
+    const mins = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    const parts: string[] = [];
+    if (days) parts.push(`${days}d`);
+    if (hours) parts.push(`${hours}h`);
+    if (mins) parts.push(`${mins}m`);
+    if (secs || parts.length === 0) parts.push(`${secs}s`);
+    return parts.join(' ');
+}
+
 export default async function (sock: any, msg: any, extra: any) {
     const sender = msg.sender;
 
     try {
+        const action = String(extra.command || '').toLowerCase();
+        if (['economyboard', 'eboard', 'baltop'].includes(action)) {
+            const limit = Math.max(1, Math.min(parseInt(extra.args[0], 10) || 10, 50));
+            const rows = db.prepare(`
+                SELECT jid, name, yen, bank
+                FROM users
+                WHERE yen + bank > 0
+                ORDER BY yen + bank DESC
+                LIMIT ?
+            `).all(limit) as any[];
+            if (!rows.length) return msg.reply('❌ No hay datos disponibles en el ranking económico.');
+            let text = `🍓 *ECONOMY BOARD*\n\n`;
+            rows.forEach((row, index) => {
+                const total = (row.yen || 0) + (row.bank || 0);
+                text += `${index + 1}. *${row.name || row.jid.split('@')[0]}* — ¥${total.toLocaleString()}\n`;
+            });
+            return msg.reply(text);
+        }
+        if (['einfo', 'cooldowns', 'economyinfo', 'infoeconomy'].includes(action)) {
+            const now = Date.now();
+            const keys = ['daily', 'weekly', 'monthly', 'coffer', 'work', 'crime', 'slut', 'mine', 'fish', 'hunt', 'adventure', 'dungeon', 'invoke', 'steal', 'bet'];
+            let text = `🍓 *INFORMACIÓN ECONÓMICA*\n\n`;
+            for (const key of keys) {
+                const until = getCooldown(sender, key);
+                text += `• ${key}: *${until > now ? formatCooldown(until - now) : 'Disponible'}*\n`;
+            }
+            return msg.reply(text);
+        }
         const target = msg.mentionedJid?.[0] || msg.quoted?.sender || sender;
         const user = getUser(target);
         const displayName = user.name || target.split('@')[0];

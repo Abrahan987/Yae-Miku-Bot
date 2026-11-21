@@ -1,6 +1,6 @@
 import { getUser, updateUser, getCooldown, setCooldown } from '../lib/database.ts';
 
-export const command = ['bet', 'apostar'];
+export const command = ['bet', 'apostar', 'casino', 'cf', 'flip', 'coinflip', 'rt', 'roulette', 'ruleta', 'slot', 'ppt'];
 export const category = 'economia';
 export const description = 'Apostar dinero.';
 export const admin = false;
@@ -22,6 +22,77 @@ export default async function (sock: any, msg: any, extra: any) {
     const args = extra.args;
 
     try {
+        const action = String(extra.command || 'bet').toLowerCase();
+        if (['cf', 'flip', 'coinflip'].includes(action)) {
+            const amountIndex = args.findIndex((value: string) => /^\d+$/.test(value));
+            const amount = amountIndex >= 0 ? parseInt(args[amountIndex], 10) : 0;
+            const side = args.find((value: string) => ['cara', 'cruz'].includes(value.toLowerCase()))?.toLowerCase();
+            if (amount < 100 || !side) return msg.reply(`❌ Uso: *.${action} 200 cara* o *.${action} cruz 200*`);
+            const until = getCooldown(sender, 'coinflip');
+            if (Date.now() < until) return msg.reply(`⏱️ Espera *${formatTime(until - Date.now())}* antes de volver.`);
+            const user = getUser(sender);
+            if (amount > (user.yen || 0)) return msg.reply(`❌ No tienes suficientes yenes para apostar *¥${amount.toLocaleString()}*.`);
+            const result = Math.random() < 0.5 ? 'cara' : 'cruz';
+            const won = result === side;
+            const yen = (user.yen || 0) + (won ? amount : -amount);
+            updateUser(sender, { name: user.name, yen: Math.max(0, yen), banned: user.banned });
+            setCooldown(sender, 'coinflip', Date.now() + 10 * 1000);
+            return msg.reply(won
+                ? `🪙 *CARA O CRUZ*\n\nGanó *${result}*.\nGanaste *+¥${amount.toLocaleString()}*`
+                : `🪙 *CARA O CRUZ*\n\nSalió *${result}*.\nPerdiste *-¥${amount.toLocaleString()}*`);
+        }
+        if (['rt', 'roulette', 'ruleta'].includes(action)) {
+            const amount = parseInt(args.find((value: string) => /^\d+$/.test(value)) || '0', 10);
+            const color = args.find((value: string) => ['red', 'black', 'green'].includes(value.toLowerCase()))?.toLowerCase();
+            if (amount < 200 || !color) return msg.reply(`❌ Uso: *.${action} 200 red* o *.${action} black 200*`);
+            const until = getCooldown(sender, 'roulette');
+            if (Date.now() < until) return msg.reply(`⏱️ Espera *${formatTime(until - Date.now())}* antes de volver.`);
+            const user = getUser(sender);
+            if (amount > (user.yen || 0)) return msg.reply(`❌ No tienes suficientes yenes.`);
+            const roll = Math.floor(Math.random() * 37);
+            const result = roll < 9 ? 'green' : roll < 23 ? 'red' : 'black';
+            const multiplier = result === 'green' ? 5 : 2;
+            const won = result === color;
+            const prize = won ? amount * multiplier : -amount;
+            const yen = Math.max(0, (user.yen || 0) + prize);
+            updateUser(sender, { name: user.name, yen, banned: user.banned });
+            setCooldown(sender, 'roulette', Date.now() + 30 * 1000);
+            return msg.reply(`🎡 *RULETA*\n\nSalió *${result}*.\n${won ? `Ganaste *¥${(amount * multiplier).toLocaleString()}*` : `Perdiste *¥${amount.toLocaleString()}*`}`);
+        }
+        if (action === 'ppt') {
+            const choice = args[0]?.toLowerCase();
+            if (!['piedra', 'papel', 'tijera'].includes(choice)) return msg.reply(`❌ Uso: *.ppt piedra*, *.ppt papel* o *.ppt tijera*`);
+            const until = getCooldown(sender, 'ppt');
+            if (Date.now() < until) return msg.reply(`⏱️ Espera *${formatTime(until - Date.now())}* antes de volver.`);
+            const options = ['piedra', 'papel', 'tijera'];
+            const botChoice = options[Math.floor(Math.random() * options.length)];
+            const won = (choice === 'piedra' && botChoice === 'tijera') || (choice === 'papel' && botChoice === 'piedra') || (choice === 'tijera' && botChoice === 'papel');
+            const tie = choice === botChoice;
+            const user = getUser(sender);
+            const change = tie ? 800 + Math.floor(Math.random() * 701) : won ? 3000 + Math.floor(Math.random() * 2501) : -(1000 + Math.floor(Math.random() * 2001));
+            const yen = Math.max(0, (user.yen || 0) + change);
+            updateUser(sender, { name: user.name, yen, banned: user.banned });
+            setCooldown(sender, 'ppt', Date.now() + 60 * 1000);
+            return msg.reply(`✂️ *PIEDRA, PAPEL O TIJERA*\n\nElegiste *${choice}* y Yae eligió *${botChoice}*\n${tie ? 'Empate' : won ? 'Ganaste' : 'Perdiste'}: *${change >= 0 ? '+' : '-'}¥${Math.abs(change).toLocaleString()}*`);
+        }
+        if (action === 'slot') {
+            const bet = parseInt(args[0], 10);
+            if (!bet || bet < 100) return msg.reply('❌ Uso: *.slot <cantidad>*');
+            const until = getCooldown(sender, 'slot');
+            if (Date.now() < until) return msg.reply(`⏱️ Espera *${formatTime(until - Date.now())}* antes de volver.`);
+            const user = getUser(sender);
+            if (bet > (user.yen || 0)) return msg.reply('❌ No tienes suficientes yenes.');
+            const emojis = ['✾', '❃', '❁'];
+            const reel = () => emojis[Math.floor(Math.random() * emojis.length)];
+            const a = reel(), b = reel(), c = reel();
+            const won = a === b && b === c;
+            const pair = a === b || a === c || b === c;
+            const change = won ? bet : pair ? 10 : -bet;
+            const yen = Math.max(0, (user.yen || 0) + change);
+            updateUser(sender, { name: user.name, yen, banned: user.banned });
+            setCooldown(sender, 'slot', Date.now() + 30 * 1000);
+            return msg.reply(`🎰 *SLOTS*\n\n${a} : ${b} : ${c}\n\n${change >= 0 ? `Ganaste +¥${change.toLocaleString()}` : `Perdiste -¥${Math.abs(change).toLocaleString()}`} `);
+        }
         if (!args.length || args[0].toLowerCase() === 'help') {
             return msg.reply(
                 `🎰 *APUESTA*\n\n` +

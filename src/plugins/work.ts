@@ -1,6 +1,6 @@
 import { getUser, updateUser, getCooldown, setCooldown } from '../lib/database.ts';
 
-export const command = ['work', 'trabajar', 'w'];
+export const command = ['work', 'trabajar', 'w', 'crime', 'crimen', 'slut', 'prostituirse', 'mine', 'minar', 'fish', 'pescar', 'hunt', 'cazar', 'adventure', 'aventura', 'dungeon', 'mazmorra', 'invoke', 'ritual', 'invocar'];
 export const category = 'economia';
 export const description = 'Trabaja y gana yen.';
 export const admin = false;
@@ -41,6 +41,75 @@ export default async function (sock: any, msg: any, extra: any) {
     const sender = msg.sender;
 
     try {
+        const action = String(extra.command || '').toLowerCase();
+        const crimeActions = ['crime', 'crimen'];
+        const resourceActions = ['mine', 'minar', 'fish', 'pescar', 'hunt', 'cazar'];
+        const adventureActions = ['adventure', 'aventura', 'dungeon', 'mazmorra'];
+        const ritualActions = ['invoke', 'ritual', 'invocar'];
+        if (crimeActions.includes(action) || ['slut', 'prostituirse'].includes(action)) {
+            const key = crimeActions.includes(action) ? 'crime' : 'slut';
+            const until = getCooldown(sender, key);
+            if (Date.now() < until) {
+                return msg.reply(`⏱️ *COOLDOWN ACTIVO*\n\n🍥 Debes esperar *${formatTime(until - Date.now())}* antes de intentarlo de nuevo.`);
+            }
+            const success = Math.random() < 0.5;
+            const user = getUser(sender);
+            const amount = success
+                ? 3500 + Math.floor(Math.random() * 2501)
+                : 2000 + Math.floor(Math.random() * 2001);
+            let yen = user.yen || 0;
+            let bank = user.bank || 0;
+            if (success) {
+                yen += amount;
+            } else {
+                const loss = Math.min(amount, yen + bank);
+                if (yen >= loss) yen -= loss;
+                else {
+                    const fromBank = loss - yen;
+                    yen = 0;
+                    bank = Math.max(0, bank - fromBank);
+                }
+            }
+            updateUser(sender, { name: user.name, yen, bank, banned: user.banned });
+            setCooldown(sender, key, Date.now() + (key === 'crime' ? 7 : 5) * 60 * 1000);
+            const label = key === 'crime' ? 'CRIMEN' : 'TRABAJO DE RIESGO';
+            return msg.reply(
+                success
+                    ? `✅ *${label} EXITOSO*\n\n🍓 Ganaste *¥${amount.toLocaleString()}*\n💰 Saldo: *¥${yen.toLocaleString()}*`
+                    : `❌ *${label} FALLIDO*\n\n🍥 Perdiste *¥${amount.toLocaleString()}*\n💰 Saldo: *¥${yen.toLocaleString()}*`
+            );
+        }
+        if (resourceActions.includes(action) || adventureActions.includes(action) || ritualActions.includes(action)) {
+            const key = resourceActions.includes(action)
+                ? (['mine', 'minar'].includes(action) ? 'mine' : ['fish', 'pescar'].includes(action) ? 'fish' : 'hunt')
+                : adventureActions.includes(action)
+                    ? (['dungeon', 'mazmorra'].includes(action) ? 'dungeon' : 'adventure')
+                    : 'invoke';
+            const delays: Record<string, number> = { mine: 10, fish: 8, hunt: 15, adventure: 20, dungeon: 17, invoke: 12 };
+            const until = getCooldown(sender, key);
+            if (Date.now() < until) {
+                return msg.reply(`⏱️ *COOLDOWN ACTIVO*\n\n🍥 Debes esperar *${formatTime(until - Date.now())}* antes de volver.`);
+            }
+            const user = getUser(sender);
+            const success = Math.random() < 0.55;
+            const ranges: Record<string, [number, number]> = {
+                mine: [7000, 9500], fish: [6000, 8000], hunt: [10000, 13000],
+                adventure: [14000, 18000], dungeon: [12000, 15000], invoke: [8000, 11000]
+            };
+            const [min, max] = ranges[key];
+            const amount = min + Math.floor(Math.random() * (max - min + 1));
+            const yen = success
+                ? (user.yen || 0) + amount
+                : Math.max(0, (user.yen || 0) - amount);
+            updateUser(sender, { name: user.name, yen, bank: success ? user.bank : user.bank, banned: user.banned });
+            setCooldown(sender, key, Date.now() + delays[key] * 60 * 1000);
+            const names: Record<string, string> = { mine: 'MINERÍA', fish: 'PESCA', hunt: 'CAZA', adventure: 'AVENTURA', dungeon: 'MAZMORRA', invoke: 'RITUAL' };
+            return msg.reply(
+                success
+                    ? `✅ *${names[key]}*\n\n🍓 Ganaste *¥${amount.toLocaleString()}*\n💰 Saldo: *¥${yen.toLocaleString()}*`
+                    : `❌ *${names[key]}*\n\n🍥 No obtuviste recompensa y perdiste *¥${amount.toLocaleString()}*\n💰 Saldo: *¥${yen.toLocaleString()}*`
+            );
+        }
         const now = Date.now();
         const until = getCooldown(sender, 'work');
 
