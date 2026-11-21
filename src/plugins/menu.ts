@@ -14,7 +14,7 @@ import {
 
 export const command = ['menu', 'help', 'comandos'];
 export const category = 'info';
-export const description = 'Muestra el menú interactivo de comandos.';
+export const description = 'Muestra el menú de comandos.';
 export const needsGroupMetadata = false;
 
 type MenuItem = {
@@ -48,12 +48,8 @@ const categoryConfig = [
         title: 'GRUPOS',
         emoji: '🍓',
         aliases: [
-            'grupos',
-            'grupo',
-            'group',
-            'groups',
-            'admin',
-            'administracion'
+            'grupos', 'grupo', 'group', 'groups',
+            'admin', 'administracion'
         ]
     },
     {
@@ -61,12 +57,8 @@ const categoryConfig = [
         title: 'HERRAMIENTAS',
         emoji: '🧰',
         aliases: [
-            'herramientas',
-            'tools',
-            'utilidades',
-            'utils',
-            'stickers',
-            'sticker'
+            'herramientas', 'tools', 'utilidades',
+            'utils', 'stickers', 'sticker'
         ]
     },
     {
@@ -160,17 +152,16 @@ function getCategories(pluginData: any): MenuCategory[] {
         const commands = Array.isArray(data.commands)
             ? data.commands
                 .filter(Boolean)
-                .map(
-                    (value: unknown) =>
-                        String(value).toLowerCase()
+                .map((value: unknown) =>
+                    String(value).toLowerCase()
                 )
             : [];
 
         if (!commands.length) continue;
 
         const exists = current.items.some(item =>
-            item.commands.some(
-                cmd => commands.includes(cmd)
+            item.commands.some(cmd =>
+                commands.includes(cmd)
             )
         );
 
@@ -202,6 +193,220 @@ function getMenuHeader(botName: string): string {
 const menuFooter = `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
 
 ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
+
+async function sendOriginalMenu(
+    sock: any,
+    msg: any,
+    pluginData: any,
+    remoteJid: string,
+    contextInfo: any
+) {
+    const originalCategories = [
+        {
+            key: 'info',
+            title: 'INFO',
+            emoji: '🪷',
+            aliases: [
+                'info', 'informacion', 'main', 'principal'
+            ]
+        },
+        {
+            key: 'descargas',
+            title: 'DESCARGAS',
+            emoji: '🍥',
+            aliases: [
+                'descargas', 'descarga',
+                'download', 'downloads'
+            ]
+        },
+        {
+            key: 'grupos',
+            title: 'GRUPOS',
+            emoji: '🍓',
+            aliases: [
+                'grupos', 'grupo', 'group', 'groups'
+            ]
+        },
+        {
+            key: 'herramientas',
+            title: 'HERRAMIENTAS',
+            emoji: '🧰',
+            aliases: [
+                'herramientas', 'tools', 'utilidades'
+            ]
+        }
+    ];
+
+    const groupedCategories =
+        new Map<string, MenuItem[]>();
+
+    if (pluginData && typeof pluginData.entries === 'function') {
+        for (const [, data] of pluginData.entries()) {
+            const rawCat = String(
+                data.category || 'misc'
+            ).toLowerCase().trim();
+
+            const matchedConfig = originalCategories.find(
+                c => c.aliases.includes(rawCat)
+            );
+
+            const finalKey = matchedConfig
+                ? matchedConfig.key
+                : rawCat;
+
+            if (!groupedCategories.has(finalKey)) {
+                groupedCategories.set(finalKey, []);
+            }
+
+            const catList = groupedCategories.get(finalKey)!;
+
+            const commands = Array.isArray(data.commands)
+                ? data.commands.map(
+                    (c: unknown) => String(c)
+                )
+                : [];
+
+            if (!commands.length) continue;
+
+            const existing = catList.find(item =>
+                item.commands.some(c =>
+                    commands.includes(c)
+                )
+            );
+
+            if (!existing) {
+                catList.push({
+                    commands,
+                    description:
+                        data.description || 'Sin descripción'
+                });
+            }
+        }
+    }
+
+    const renderCategoryBlock = (
+        title: string,
+        emoji: string,
+        items: MenuItem[]
+    ) => {
+        const lines: string[] = [];
+
+        for (const item of items) {
+            const limitedCmds = item.commands.slice(0, 2);
+
+            const cmdsFormatted = limitedCmds
+                .map(c => `.${c}`)
+                .join(' • ');
+
+            lines.push(`> *${cmdsFormatted}*`);
+            lines.push(`> ${item.description}`);
+        }
+
+        return `${emoji}͜ᩧ𑂳ᰍ  *${title.toUpperCase()}*\n${lines.join('\n')}`;
+    };
+
+    const blocks: string[] = [];
+    const processedKeys = new Set<string>();
+
+    for (const conf of originalCategories) {
+        const items = groupedCategories.get(conf.key);
+
+        if (items && items.length > 0) {
+            blocks.push(
+                renderCategoryBlock(
+                    conf.title,
+                    conf.emoji,
+                    items
+                )
+            );
+
+            processedKeys.add(conf.key);
+        }
+    }
+
+    for (const [catKey, items] of groupedCategories.entries()) {
+        if (!processedKeys.has(catKey) && items.length > 0) {
+            blocks.push(
+                renderCategoryBlock(
+                    catKey.toUpperCase(),
+                    '🌸',
+                    items
+                )
+            );
+        }
+    }
+
+    const categoriesContent = blocks.join('\n\n');
+
+    const botName = resolveBotName(
+        sock,
+        global.namebot || 'YAE MIKU BOT'
+    );
+
+    const menuText = `ᅟㅤ 𓈒   ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒
+
+  ${botName.toUpperCase()}˙ᰨᰍ
+𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
+
+🍓͜ᩧ𑂳ᰍ  𝗛𝗼𝗹𝗮, 𝗯𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼 𝗮𝗹
+𝗺𝗲𝗻𝘂́ 𝗽𝗿𝗶𝗻𝗰𝗶𝗽𝗮𝗹 𝗱𝗲𝗹 𝗯𝗼𝘁.
+
+${categoriesContent}
+
+𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
+
+ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
+
+    const banner = resolveBotBanner(
+        sock,
+        global.icono
+    );
+
+    if (banner) {
+        const image = banner.buffer
+            ? banner.buffer
+            : { url: banner.url as string };
+
+        try {
+            return await sock.sendMessage(
+                remoteJid,
+                {
+                    image,
+                    caption: menuText,
+                    contextInfo
+                }
+            );
+        } catch (error) {
+            console.error('[MENU BANNER ERROR]:', error);
+
+            if (
+                banner.url !== global.icono &&
+                global.icono
+            ) {
+                try {
+                    return await sock.sendMessage(
+                        remoteJid,
+                        {
+                            image: {
+                                url: global.icono
+                            },
+                            caption: menuText,
+                            contextInfo
+                        }
+                    );
+                } catch {}
+            }
+        }
+    }
+
+    return sock.sendMessage(
+        remoteJid,
+        {
+            text: menuText,
+            contextInfo
+        }
+    );
+}
 
 async function sendTextMenu(
     sock: any,
@@ -328,6 +533,16 @@ export default async function (
             true
         );
 
+    if (selection === 'texto') {
+        return sendOriginalMenu(
+            sock,
+            msg,
+            extra?.pluginData,
+            remoteJid,
+            contextInfo
+        );
+    }
+
     if (selection.startsWith('cat_')) {
         const categoryKey = selection.slice(4);
 
@@ -357,10 +572,6 @@ export default async function (
         return msg.reply(
             '🍥 No hay comandos disponibles en este momento.'
         );
-    }
-
-    if (selection === 'texto') {
-        return sendFallback();
     }
 
     if (selection && selection !== 'lista') {
