@@ -1,16 +1,26 @@
-// Clean lid by Ryuzei-Ts
+
 import fs from 'fs';
 import path from 'path';
-import { proto, getContentType, jidDecode, downloadContentFromMessage } from '@whiskeysockets/baileys';
+import {
+    proto,
+    getContentType,
+    jidDecode,
+    downloadContentFromMessage
+} from '@whiskeysockets/baileys';
 
 const sessionDirs = (): string[] => {
     const dirs = [path.join(process.cwd(), 'sessions')];
     const subsDir = path.join(process.cwd(), 'subs');
+
     try {
-        for (const d of fs.readdirSync(subsDir)) dirs.push(path.join(subsDir, d));
+        for (const d of fs.readdirSync(subsDir)) {
+            dirs.push(path.join(subsDir, d));
+        }
     } catch {}
+
     return dirs;
 };
+
 const maxLidCacheSize = 5000;
 
 export const lidCache = new Map<string, string>();
@@ -18,8 +28,12 @@ export const lidCache = new Map<string, string>();
 function setLidCache(lid: string, jid: string): void {
     if (lidCache.size >= maxLidCacheSize) {
         const firstKey = lidCache.keys().next().value;
-        if (firstKey) lidCache.delete(firstKey);
+
+        if (firstKey) {
+            lidCache.delete(firstKey);
+        }
     }
+
     lidCache.set(lid, jid);
 }
 
@@ -28,60 +42,143 @@ const contentTypeCache = new WeakMap<object, string | undefined>();
 
 export function rememberParticipants(participants: any[]): void {
     for (const p of participants || []) {
-        const ids = [p?.id, p?.lid, p?.phoneNumber].filter((x) => typeof x === 'string') as string[];
-        const pn = ids.find((x) => x.endsWith('@s.whatsapp.net'));
+        const ids = [
+            p?.id,
+            p?.lid,
+            p?.phoneNumber
+        ].filter(
+            (x) => typeof x === 'string'
+        ) as string[];
+
+        const pn = ids.find(
+            (x) => x.endsWith('@s.whatsapp.net')
+        );
+
         if (!pn) continue;
+
         for (const x of ids) {
             const m = x.match(/^([^@:]+)(?::\d+)?@lid$/);
-            if (m) setLidCache(m[1], decodeJid(pn));
+
+            if (m) {
+                setLidCache(m[1], decodeJid(pn));
+            }
         }
     }
 }
 
 export function learnLid(a: any, b: any): void {
-    const ids = [a, b].filter((x) => typeof x === 'string') as string[];
-    const pn = ids.find((x) => x.endsWith('@s.whatsapp.net'));
+    const ids = [a, b].filter(
+        (x) => typeof x === 'string'
+    ) as string[];
+
+    const pn = ids.find(
+        (x) => x.endsWith('@s.whatsapp.net')
+    );
+
     if (!pn) return;
+
     for (const x of ids) {
         const m = x.match(/^([^@:]+)(?::\d+)?@lid$/);
-        if (m) setLidCache(m[1], decodeJid(pn));
+
+        if (m) {
+            setLidCache(m[1], decodeJid(pn));
+        }
     }
 }
 
 export const decodeJid = (jid: any): string => {
-    if (!jid || typeof jid !== 'string') return '';
+    if (!jid || typeof jid !== 'string') {
+        return '';
+    }
+
     if (jid.includes(':')) {
         const decoded = jidDecode(jid);
-        return decoded?.user && decoded?.server ? `${decoded.user}@${decoded.server}` : jid.split(':')[0] + '@' + (jid.split('@')[1] || 's.whatsapp.net');
+
+        return decoded?.user && decoded?.server
+            ? `${decoded.user}@${decoded.server}`
+            : jid.split(':')[0] + '@' +
+              (jid.split('@')[1] || 's.whatsapp.net');
     }
+
     return jid;
 };
 
-function getCachedContentType(rawMsg: any): string | undefined {
-    if (!rawMsg || typeof rawMsg !== 'object') return undefined;
+function getCachedContentType(
+    rawMsg: any
+): string | undefined {
+    if (!rawMsg || typeof rawMsg !== 'object') {
+        return undefined;
+    }
+
     if (contentTypeCache.has(rawMsg)) {
         return contentTypeCache.get(rawMsg);
     }
+
     const type = getContentType(rawMsg);
+
     contentTypeCache.set(rawMsg, type);
+
     return type;
 }
 
 function unwrapMessage(message: any): any {
-    if (!message || typeof message !== 'object') return message;
+    if (!message || typeof message !== 'object') {
+        return message;
+    }
+
     let raw = message;
 
-    if (raw.ephemeralMessage) raw = raw.ephemeralMessage.message;
-    if (raw.viewOnceMessage) raw = raw.viewOnceMessage.message;
-    if (raw.viewOnceMessageV2) raw = raw.viewOnceMessageV2.message;
-    if (raw.viewOnceMessageV2Extension) raw = raw.viewOnceMessageV2Extension.message;
-    if (raw.documentWithCaptionMessage) raw = raw.documentWithCaptionMessage.message;
+    if (raw.ephemeralMessage) {
+        raw = raw.ephemeralMessage.message;
+    }
+
+    if (raw.viewOnceMessage) {
+        raw = raw.viewOnceMessage.message;
+    }
+
+    if (raw.viewOnceMessageV2) {
+        raw = raw.viewOnceMessageV2.message;
+    }
+
+    if (raw.viewOnceMessageV2Extension) {
+        raw = raw.viewOnceMessageV2Extension.message;
+    }
+
+    if (raw.documentWithCaptionMessage) {
+        raw = raw.documentWithCaptionMessage.message;
+    }
 
     return raw;
 }
 
-function extractMessageBody(rawMsg: any, msgContent: any): string {
+function extractMessageBody(
+    rawMsg: any,
+    msgContent: any
+): string {
     if (!rawMsg) return '';
+
+    let interactiveId = '';
+
+    const paramsJson =
+        msgContent?.nativeFlowResponseMessage?.paramsJson ||
+        rawMsg?.interactiveResponseMessage
+            ?.nativeFlowResponseMessage?.paramsJson;
+
+    if (typeof paramsJson === 'string') {
+        try {
+            const parsed = JSON.parse(paramsJson);
+
+            interactiveId =
+                typeof parsed?.id === 'string'
+                    ? parsed.id
+                    : typeof parsed?.selectedId === 'string'
+                        ? parsed.selectedId
+                        : typeof parsed?.selectedRowId === 'string'
+                            ? parsed.selectedRowId
+                            : '';
+        } catch {}
+    }
+
     return (
         rawMsg.conversation ||
         msgContent?.text ||
@@ -89,22 +186,38 @@ function extractMessageBody(rawMsg: any, msgContent: any): string {
         msgContent?.selectedButtonId ||
         msgContent?.singleSelectReply?.selectedRowId ||
         msgContent?.selectedId ||
+        interactiveId ||
         ''
     );
 }
 
-export const UserJid = (sock: any, chat?: string, jid?: string): string => {
+export const UserJid = (
+    sock: any,
+    chat?: string,
+    jid?: string
+): string => {
     const targetJid = jid || chat;
-    if (!targetJid || typeof targetJid !== 'string') return '';
+
+    if (!targetJid || typeof targetJid !== 'string') {
+        return '';
+    }
 
     const cleanJid = decodeJid(targetJid);
 
-    if (cleanJid.endsWith('@s.whatsapp.net') || cleanJid.endsWith('@g.us')) {
+    if (
+        cleanJid.endsWith('@s.whatsapp.net') ||
+        cleanJid.endsWith('@g.us')
+    ) {
         return cleanJid;
     }
 
-    const lidMatch = cleanJid.match(/^([^@:]+)(?::\d+)?@lid$/);
-    if (!lidMatch) return cleanJid;
+    const lidMatch = cleanJid.match(
+        /^([^@:]+)(?::\d+)?@lid$/
+    );
+
+    if (!lidMatch) {
+        return cleanJid;
+    }
 
     const lidNumber = lidMatch[1];
 
@@ -114,35 +227,55 @@ export const UserJid = (sock: any, chat?: string, jid?: string): string => {
 
     if (sock?.signalRepository?.lidMapping) {
         try {
-            const cachedPn = sock.signalRepository.lidMapping.mappingCache?.get(`lid:${lidNumber}`);
+            const cachedPn =
+                sock.signalRepository.lidMapping
+                    .mappingCache?.get(`lid:${lidNumber}`);
+
             if (cachedPn) {
-                const resolvedJid = `${cachedPn}@s.whatsapp.net`;
+                const resolvedJid =
+                    `${cachedPn}@s.whatsapp.net`;
+
                 setLidCache(lidNumber, resolvedJid);
+
                 return resolvedJid;
             }
-        } catch (err) {}
+        } catch {}
     }
 
     for (const dir of sessionDirs()) {
-        const mappingFile = path.join(dir, `lid-mapping-${lidNumber}_reverse.json`);
+        const mappingFile = path.join(
+            dir,
+            `lid-mapping-${lidNumber}_reverse.json`
+        );
+
         try {
             if (fs.existsSync(mappingFile)) {
-                const phoneStr = JSON.parse(fs.readFileSync(mappingFile, 'utf-8'));
+                const phoneStr = JSON.parse(
+                    fs.readFileSync(mappingFile, 'utf-8')
+                );
+
                 if (phoneStr) {
-                    const resolvedJid = `${phoneStr}@s.whatsapp.net`;
+                    const resolvedJid =
+                        `${phoneStr}@s.whatsapp.net`;
+
                     setLidCache(lidNumber, resolvedJid);
+
                     return resolvedJid;
                 }
             }
-        } catch (err) {}
+        } catch {}
     }
 
     return cleanJid;
 };
 
-// Descarga el contenido multimedia de un mensaje (propio o citado)
-async function downloadMedia(media: any, msgType: string): Promise<Buffer | null> {
-    if (!media || !msgType) return null;
+async function downloadMedia(
+    media: any,
+    msgType: string
+): Promise<Buffer | null> {
+    if (!media || !msgType) {
+        return null;
+    }
 
     try {
         const stream = await downloadContentFromMessage(
@@ -151,58 +284,118 @@ async function downloadMedia(media: any, msgType: string): Promise<Buffer | null
         );
 
         const chunks: Buffer[] = [];
+
         for await (const chunk of stream) {
             chunks.push(chunk);
         }
+
         return Buffer.concat(chunks);
     } catch (downloadError) {
-        console.error('[SERIALIZE ERROR]:', downloadError);
+        console.error(
+            '[SERIALIZE ERROR]:',
+            downloadError
+        );
+
         return null;
     }
 }
 
-function processQuotedMessage(sock: any, chatJid: string, contextInfo: any): any {
-    if (!contextInfo?.quotedMessage) return null;
+function processQuotedMessage(
+    sock: any,
+    chatJid: string,
+    contextInfo: any
+): any {
+    if (!contextInfo?.quotedMessage) {
+        return null;
+    }
 
     try {
-        const quotedRaw = unwrapMessage(contextInfo.quotedMessage);
-        const quotedType = getCachedContentType(quotedRaw);
-        const quotedMsg = quotedType ? quotedRaw[quotedType] : null;
+        const quotedRaw = unwrapMessage(
+            contextInfo.quotedMessage
+        );
 
-        const quotedBody = 
+        const quotedType = getCachedContentType(
+            quotedRaw
+        );
+
+        const quotedMsg = quotedType
+            ? quotedRaw[quotedType]
+            : null;
+
+        const quotedBody =
             quotedRaw?.conversation ||
             quotedMsg?.text ||
             quotedMsg?.caption ||
             '';
 
-        const quotedParticipant = decodeJid(contextInfo.participant || '');
-        const resolvedParticipant = UserJid(sock, chatJid, quotedParticipant);
+        const quotedParticipant = decodeJid(
+            contextInfo.participant || ''
+        );
 
-        const botJids = [sock.user?.id, sock.user?.lid].map(decodeJid).filter(Boolean);
-        const botSet = new Set([...botJids, ...botJids.map((j) => UserJid(sock, chatJid, j))]);
+        const resolvedParticipant = UserJid(
+            sock,
+            chatJid,
+            quotedParticipant
+        );
+
+        const botJids = [
+            sock.user?.id,
+            sock.user?.lid
+        ].map(decodeJid).filter(Boolean);
+
+        const botSet = new Set([
+            ...botJids,
+            ...botJids.map(
+                (j) => UserJid(sock, chatJid, j)
+            )
+        ]);
 
         return {
             type: quotedType,
             msg: quotedMsg,
             key: {
                 remoteJid: chatJid,
-                fromMe: [quotedParticipant, resolvedParticipant].some((j) => botSet.has(j)),
+                fromMe: [
+                    quotedParticipant,
+                    resolvedParticipant
+                ].some(
+                    (j) => botSet.has(j)
+                ),
                 id: contextInfo.stanzaId,
                 participant: resolvedParticipant
             },
             sender: resolvedParticipant,
             body: quotedBody,
-            mentionedJid: ((contextInfo.mentionedJid || []) as string[]).map((j) => UserJid(sock, chatJid, j) || j),
-            download: (): Promise<Buffer | null> => downloadMedia(quotedMsg, quotedType || '')
+            mentionedJid: (
+                (contextInfo.mentionedJid || []) as string[]
+            ).map(
+                (j) => UserJid(sock, chatJid, j) || j
+            ),
+            download: (): Promise<Buffer | null> =>
+                downloadMedia(
+                    quotedMsg,
+                    quotedType || ''
+                )
         };
     } catch (error) {
-        console.error('[SERIALIZE ERROR]:', error);
+        console.error(
+            '[SERIALIZE ERROR]:',
+            error
+        );
+
         return null;
     }
 }
 
-export function serialize(sock: any, m: proto.IWebMessageInfo): any {
-    if (!m || typeof m !== 'object' || !m.message) {
+export function serialize(
+    sock: any,
+    m: proto.IWebMessageInfo
+): any {
+    if (
+        !m ||
+        typeof m !== 'object' ||
+        !m.message
+    ) {
         return null;
     }
 
@@ -212,26 +405,61 @@ export function serialize(sock: any, m: proto.IWebMessageInfo): any {
 
     try {
         const rawMsg = unwrapMessage(m.message);
-        const msgType = getCachedContentType(rawMsg);
-        
-        if (!msgType) return null;
+
+        const msgType = getCachedContentType(
+            rawMsg
+        );
+
+        if (!msgType) {
+            return null;
+        }
 
         const msg = rawMsg[msgType];
-        const body = extractMessageBody(rawMsg, msg);
+
+        const body = extractMessageBody(
+            rawMsg,
+            msg
+        );
 
         const key = m.key || {};
-        const remoteJid = decodeJid(key.remoteJid || '');
-        
-        const chat = UserJid(sock, remoteJid);
-        const rawSender = decodeJid(key.participant || remoteJid);
-        const sender = UserJid(sock, chat, rawSender);
+
+        const remoteJid = decodeJid(
+            key.remoteJid || ''
+        );
+
+        const chat = UserJid(
+            sock,
+            remoteJid
+        );
+
+        const rawSender = decodeJid(
+            key.participant || remoteJid
+        );
+
+        const sender = UserJid(
+            sock,
+            chat,
+            rawSender
+        );
 
         const isGroup = chat.endsWith('@g.us');
         const isBot = !!key.fromMe;
 
-        const contextInfo = msg?.contextInfo || rawMsg?.contextInfo;
-        const quoted = processQuotedMessage(sock, chat, contextInfo);
-        const mentionedJid = ((contextInfo?.mentionedJid || []) as string[]).map((j) => UserJid(sock, chat, j) || j);
+        const contextInfo =
+            msg?.contextInfo ||
+            rawMsg?.contextInfo;
+
+        const quoted = processQuotedMessage(
+            sock,
+            chat,
+            contextInfo
+        );
+
+        const mentionedJid = (
+            (contextInfo?.mentionedJid || []) as string[]
+        ).map(
+            (j) => UserJid(sock, chat, j) || j
+        );
 
         const result = {
             ...m,
@@ -247,19 +475,37 @@ export function serialize(sock: any, m: proto.IWebMessageInfo): any {
             pushName: m.pushName || 'Usuario',
             reply: (text: string) => {
                 if (!chat) {
-                    console.error('[SERIALIZE ERROR]: Chat JID missing');
-                    return Promise.reject(new Error('Chat JID missing'));
+                    console.error(
+                        '[SERIALIZE ERROR]: Chat JID missing'
+                    );
+
+                    return Promise.reject(
+                        new Error('Chat JID missing')
+                    );
                 }
-                return sock.sendMessage(chat, { text }, { quoted: m });
+
+                return sock.sendMessage(
+                    chat,
+                    { text },
+                    { quoted: m }
+                );
             },
-            download: (): Promise<Buffer | null> => downloadMedia(msg, msgType)
+            download: (): Promise<Buffer | null> =>
+                downloadMedia(
+                    msg,
+                    msgType
+                )
         };
 
         messageCache.set(m, result);
-        return result;
 
+        return result;
     } catch (error) {
-        console.error('[SERIALIZE ERROR]:', error);
+        console.error(
+            '[SERIALIZE ERROR]:',
+            error
+        );
+
         return null;
     }
 }
