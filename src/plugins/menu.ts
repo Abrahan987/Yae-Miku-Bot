@@ -1,4 +1,3 @@
-
 import {
     proto,
     generateWAMessageFromContent,
@@ -177,113 +176,45 @@ const menuFooter = `𐴲੭  ˙ 𓂃  🍥  𓂃  ˙
 
 ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒`;
 
-async function sendCategory(
+async function sendTextMenu(
     sock: any,
     msg: any,
-    selected: MenuCategory,
-    botName: string,
-    contextInfo: any
-) {
-    const prefix = getPrefix();
-    const remoteJid = msg.from || msg.key?.remoteJid;
-
-    const header = `${getMenuHeader(botName)}
-
-${selected.emoji}͜ᩧ𑂳ᰍ  *${selected.title}*
-
-`;
-
-    let content = header;
-
-    for (const item of selected.items) {
-        const commands = item.commands
-            .map(cmd => `${prefix}${cmd}`)
-            .join(' • ');
-
-        const block = `> *${commands}*
-> ${item.description}
-
-`;
-
-        if (
-            content.length + block.length + menuFooter.length > 3500 &&
-            content !== header
-        ) {
-            await sock.sendMessage(
-                remoteJid,
-                {
-                    text: content + menuFooter,
-                    contextInfo
-                },
-                { quoted: msg }
-            );
-
-            content = header;
-        }
-
-        content += block;
-    }
-
-    return sock.sendMessage(
-        remoteJid,
-        {
-            text: content + menuFooter,
-            contextInfo
-        },
-        { quoted: msg }
-    );
-}
-
-async function sendClassicFallback(
-    sock: any,
-    msg: any,
+    remoteJid: string,
     categories: MenuCategory[],
     botName: string,
-    contextInfo: any
+    prefix: string,
+    contextInfo: any,
+    showNavigation: boolean
 ) {
-    const prefix = getPrefix();
-    const remoteJid = msg.from || msg.key?.remoteJid;
+    const header = `${getMenuHeader(botName)}\n\n`;
+    const navigation = showNavigation
+        ? `🪷 Lista interactiva: *${prefix}menu lista*\n\n`
+        : '';
+    let page = header + navigation;
 
-    let content = `${getMenuHeader(botName)}
+    for (const category of categories) {
+        const title = `${category.emoji}͜ᩧ𑂳ᰍ  *${category.title}*\n\n`;
+        let showTitle = true;
 
-`;
+        for (const item of category.items) {
+            const commands = item.commands.map(cmd => `${prefix}${cmd}`).join(' • ');
+            const block = `> *${commands}*\n> ${item.description}\n\n`;
+            if (page.length + (showTitle ? title.length : 0) + block.length + menuFooter.length > 3500 &&
+                page !== header && page !== header + navigation) {
+                await sock.sendMessage(remoteJid, { text: page + menuFooter, contextInfo }, { quoted: msg });
+                page = header;
+                showTitle = true;
+            }
 
-    for (const selected of categories) {
-        const lines = selected.items.map(item => {
-            const commands = item.commands
-                .slice(0, 2)
-                .map(cmd => `${prefix}${cmd}`)
-                .join(' • ');
-
-            return `> *${commands}*
-> ${item.description}`;
-        });
-
-        const block = `${selected.emoji}͜ᩧ𑂳ᰍ  *${selected.title}*
-${lines.join('\n')}
-
-`;
-
-        if (
-            content.length + block.length + menuFooter.length > 3500
-        ) {
-            await sock.sendMessage(remoteJid, {
-                text: content + menuFooter,
-                contextInfo
-            });
-
-            content = '';
+            if (showTitle) {
+                page += title;
+                showTitle = false;
+            }
+            page += block;
         }
-
-        content += block;
     }
 
-    if (content) {
-        return sock.sendMessage(remoteJid, {
-            text: content + menuFooter,
-            contextInfo
-        });
-    }
+    return sock.sendMessage(remoteJid, { text: page + menuFooter, contextInfo }, { quoted: msg });
 }
 
 export default async function (
@@ -291,7 +222,7 @@ export default async function (
     msg: any,
     extra: any
 ) {
-    const remoteJid = msg.from || msg.key?.remoteJid;
+    const remoteJid = msg.key?.remoteJid || msg.from;
 
     if (!remoteJid) {
         throw new Error('No se pudo obtener el chat de destino.');
@@ -313,7 +244,11 @@ export default async function (
         }
     };
 
-    const selection = String(extra.args?.[0] || '').toLowerCase();
+    const selection = normalize(extra.args?.[0] || '');
+    const prefix = getPrefix();
+    const sendFallback = () => sendTextMenu(
+        sock, msg, remoteJid, categories, botName, prefix, contextInfo, true
+    );
 
     if (selection.startsWith('cat_')) {
         const categoryKey = selection.slice(4);
@@ -327,12 +262,8 @@ export default async function (
             );
         }
 
-        return sendCategory(
-            sock,
-            msg,
-            selected,
-            botName,
-            contextInfo
+        return sendTextMenu(
+            sock, msg, remoteJid, [selected], botName, prefix, contextInfo, false
         );
     }
 
@@ -342,7 +273,7 @@ export default async function (
         );
     }
 
-    const prefix = getPrefix();
+    if (selection !== 'lista') return sendFallback();
 
     const rows = categories.map(item => ({
         header: item.emoji,
@@ -356,39 +287,32 @@ export default async function (
         rows
     }];
 
-    const banner = resolveBotBanner(sock, global.icono);
-
-    let preparedMedia: any = null;
-
-    if (banner) {
-        try {
-            const image = banner.buffer
-                ? banner.buffer
-                : { url: banner.url as string };
-
-            preparedMedia = await prepareWAMessageMedia(
-                { image },
-                { upload: sock.waUploadToServer }
-            );
-        } catch (error) {
-            console.error('[MENU BANNER ERROR]:', error);
-
-            if (banner.url !== global.icono && global.icono) {
-                try {
-                    preparedMedia = await prepareWAMessageMedia(
-                        { image: { url: global.icono } },
-                        { upload: sock.waUploadToServer }
-                    );
-                } catch {}
+    let preparedMedia: Awaited<ReturnType<typeof prepareWAMessageMedia>> | null = null;
+    let banner: ReturnType<typeof resolveBotBanner> = null;
+    try {
+        banner = resolveBotBanner(sock, global.icono);
+        const image = banner?.buffer || (banner?.url ? { url: banner.url } : undefined);
+        if (image) {
+            preparedMedia = await prepareWAMessageMedia({ image }, { upload: sock.waUploadToServer });
+        }
+    } catch (error) {
+        console.error('[MENU BANNER ERROR]:', error);
+        if (global.icono && banner?.url !== global.icono) {
+            try {
+                preparedMedia = await prepareWAMessageMedia(
+                    { image: { url: global.icono } }, { upload: sock.waUploadToServer }
+                );
+            } catch (fallbackError) {
+                console.error('[MENU DEFAULT BANNER ERROR]:', fallbackError);
             }
         }
     }
 
-    const sendInteractive = async (media: any) => {
+    const sendInteractive = async (media: typeof preparedMedia) => {
         const header = proto.Message.InteractiveMessage.Header.create({
             title: botName.toUpperCase(),
-            hasMediaAttachment: Boolean(media),
-            ...(media || {})
+            hasMediaAttachment: Boolean(media?.imageMessage),
+            imageMessage: media?.imageMessage
         });
 
         const interactiveMessage =
@@ -397,7 +321,7 @@ export default async function (
                 body: proto.Message.InteractiveMessage.Body.create({
                     text: `${getMenuHeader(botName)}
 
-🪷 Toca *Mostrar comandos* para abrir la lista y seleccionar una categoría.`
+🪷 Toca *Mostrar comandos* para abrir la lista y seleccionar una categoría.\nSi no aparece el botón, escribe *${prefix}menu*.`
                 }),
                 footer: proto.Message.InteractiveMessage.Footer.create({
                     text: '𐴲੭  ˙ 𓂃  🍥  𓂃  ˙'
@@ -434,6 +358,10 @@ export default async function (
             }
         );
 
+        if (!message.message || !message.key.id) {
+            throw new Error('No se pudo generar el mensaje interactivo.');
+        }
+
         return sock.relayMessage(
             remoteJid,
             message.message,
@@ -460,11 +388,5 @@ export default async function (
         }
     }
 
-    return sendClassicFallback(
-        sock,
-        msg,
-        categories,
-        botName,
-        contextInfo
-    );
+    return sendFallback();
 }
