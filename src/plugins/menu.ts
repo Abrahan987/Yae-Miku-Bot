@@ -1,5 +1,7 @@
 import {
     proto,
+    type BinaryNode,
+    isJidGroup,
     generateWAMessageFromContent,
     prepareWAMessageMedia
 } from '@whiskeysockets/baileys';
@@ -189,6 +191,7 @@ async function sendTextMenu(
     const header = `${getMenuHeader(botName)}\n\n`;
     const navigation = showNavigation
         ? `🪷 Lista interactiva: *${prefix}menu lista*\n\n`
+        ? `🪷 Lista interactiva: *${prefix}menu*\n\n`
         : '';
     let page = header + navigation;
 
@@ -274,6 +277,7 @@ export default async function (
     }
 
     if (selection !== 'lista') return sendFallback();
+    if (selection === 'texto') return sendFallback();
 
     const rows = categories.map(item => ({
         header: item.emoji,
@@ -308,6 +312,19 @@ export default async function (
         }
     }
 
+    const additionalNodes: BinaryNode[] = [{
+        tag: 'biz',
+        attrs: {},
+        content: [{
+            tag: 'interactive',
+            attrs: { type: 'native_flow', v: '1' },
+            content: [{ tag: 'native_flow', attrs: { name: 'mixed', v: '9' } }]
+        }]
+    }];
+    if (!isJidGroup(remoteJid)) {
+        additionalNodes.unshift({ tag: 'bot', attrs: { biz_bot: '1' } });
+    }
+
     const sendInteractive = async (media: typeof preparedMedia) => {
         const header = proto.Message.InteractiveMessage.Header.create({
             title: botName.toUpperCase(),
@@ -322,6 +339,7 @@ export default async function (
                     text: `${getMenuHeader(botName)}
 
 🪷 Toca *Mostrar comandos* para abrir la lista y seleccionar una categoría.\nSi no aparece el botón, escribe *${prefix}menu*.`
+🪷 Toca *Mostrar comandos* para abrir la lista y seleccionar una categoría.\nSi no aparece el botón, escribe *${prefix}menu texto*.`
                 }),
                 footer: proto.Message.InteractiveMessage.Footer.create({
                     text: '𐴲੭  ˙ 𓂃  🍥  𓂃  ˙'
@@ -367,6 +385,8 @@ export default async function (
             message.message,
             {
                 messageId: message.key.id
+                messageId: message.key.id,
+                additionalNodes
             }
         );
     };
