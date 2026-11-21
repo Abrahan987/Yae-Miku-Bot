@@ -12,6 +12,10 @@ let messageCountUpsert: StatementSync | undefined;
 export async function loadDB() {
     db.exec(`
         PRAGMA journal_mode = WAL;
+        PRAGMA busy_timeout = 5000;
+        PRAGMA synchronous = NORMAL;
+        PRAGMA temp_store = MEMORY;
+        PRAGMA cache_size = -20000;
 
         CREATE TABLE IF NOT EXISTS users (
             jid TEXT PRIMARY KEY,
@@ -80,6 +84,9 @@ export async function loadDB() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE INDEX IF NOT EXISTS idx_users_economy ON users (yen DESC, bank DESC);
+        CREATE INDEX IF NOT EXISTS idx_economy_cooldowns_user ON economy_cooldowns (userJid, action);
     `);
 
     migrateUsers();

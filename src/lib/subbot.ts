@@ -29,6 +29,7 @@ export interface SubBotConfig {
 const activeBots = new Map<string, any>();
 const connecting = new Set<string>();
 const retries = new Map<string, number>();
+const reconnectTimers = new Map<string, NodeJS.Timeout>();
 
 export function normalizePhone(input: string): string {
     let s = String(input).replace(/\D/g, '');
@@ -169,6 +170,11 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
             }
 
             if (connection === 'open') {
+                const pending = reconnectTimers.get(phone);
+                if (pending) {
+                    clearTimeout(pending);
+                    reconnectTimers.delete(phone);
+                }
                 connecting.delete(phone);
                 retries.delete(phone);
                 activeBots.set(phone, sock);
@@ -210,8 +216,14 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
                     retries.delete(phone);
                     return;
                 }
+                if (reconnectTimers.has(phone)) return;
                 try { sock.ev.removeAllListeners(); } catch {}
-                setTimeout(() => connect().catch((e) => console.error('[SUBBOT RECONNECT]', e)), 2000);
+                try { sock.ws?.close(); } catch {}
+                const timer = setTimeout(() => {
+                    reconnectTimers.delete(phone);
+                    connect().catch((e) => console.error('[SUBBOT RECONNECT]', e));
+                }, 2000);
+                reconnectTimers.set(phone, timer);
             }
         });
     };
@@ -251,6 +263,11 @@ export function listActiveBots(): string[] {
 
 export function removeSubBot(phone: string) {
     const p = normalizePhone(phone);
+    const timer = reconnectTimers.get(p);
+    if (timer) {
+        clearTimeout(timer);
+        reconnectTimers.delete(p);
+    }
     const bot = activeBots.get(p);
     if (bot) {
         try { bot.ev.removeAllListeners(); bot.ws?.close(); } catch {}

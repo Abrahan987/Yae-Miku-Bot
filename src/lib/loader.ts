@@ -8,6 +8,7 @@ const __dirname = dirname(__filename);
 export const commandMap = new Map<string, Function>();
 
 export const pluginData = new Map<string, { commands: string[]; category: string; description: string }>();
+let pluginWatcher: fs.FSWatcher | undefined;
 
 export async function loadPlugins(dir = '../plugins') {
     const cmdDir = path.resolve(__dirname, dir);
@@ -72,11 +73,11 @@ export async function loadPlugins(dir = '../plugins') {
     }
 }
 
-export function watchPlugins(dir = './plugins') {
+export function watchPlugins(dir = '../plugins') {
     const pluginsPath = path.resolve(__dirname, dir);
-    if (!fs.existsSync(pluginsPath)) return;
+    if (!fs.existsSync(pluginsPath) || pluginWatcher) return;
     let timer: NodeJS.Timeout;
-    fs.watch(pluginsPath, { recursive: true }, (_, filename) => {
+    pluginWatcher = fs.watch(pluginsPath, { recursive: true }, (_, filename) => {
         if (filename && (filename.endsWith('.ts') || filename.endsWith('.js'))) {
             clearTimeout(timer);
             timer = setTimeout(() => { loadPlugins(dir).catch(() => {}); }, 300);

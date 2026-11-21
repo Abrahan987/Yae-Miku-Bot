@@ -22,6 +22,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const sDir = path.join(__dirname, 'sessions');
+let mainReconnectTimer: NodeJS.Timeout | undefined;
+let activeMainSocket: any;
 
 const methodCodeQR = process.argv.includes('--qr');
 const methodCode = process.argv.includes('--code');
@@ -81,8 +83,32 @@ const askQuestion = async (query: string): Promise<string> => {
     });
 };
 
+function scheduleMainReconnect(delay: number, clearSession: boolean = false) {
+    if (mainReconnectTimer) return;
+    if (clearSession) limpiarSesion();
+    mainReconnectTimer = setTimeout(() => {
+        mainReconnectTimer = undefined;
+        startBot().catch((error) => {
+            console.error(`${rojo}[ ERROR RECONNECT ]${reset}`, error);
+            scheduleMainReconnect(3000);
+        });
+    }, delay);
+}
+
+function cleanupMainSocket(sock: any) {
+    if (activeMainSocket !== sock) return;
+    activeMainSocket = undefined;
+    try { sock.ev.removeAllListeners('connection.update'); } catch {}
+    try { sock.ev.removeAllListeners('creds.update'); } catch {}
+    try { sock.ws?.close(); } catch {}
+}
+
 async function startBot() {
     try {
+        if (mainReconnectTimer) {
+            clearTimeout(mainReconnectTimer);
+            mainReconnectTimer = undefined;
+        }
         await loadDB();
         await loadPlugins();
         watchPlugins();
@@ -168,6 +194,7 @@ ${rosa}─────── ❀ ───────${reset}
 
             getMessage: async () => undefined
         });
+        activeMainSocket = sock;
 
         if (usarCodigo && !state.creds.registered) {
             console.log(`\n${rosa}Por favor, Ingrese el número de WhatsApp.${reset}`);
@@ -193,15 +220,8 @@ ${rosa}─────── ❀ ───────${reset}
                     );
 
                     limpiarSesion();
-
-                    setTimeout(() => {
-                        startBot().catch((error) => {
-                            console.error(
-                                `${rojo}[ ERROR STARTBOT ]${reset}`,
-                                error
-                            );
-                        });
-                    }, 2000);
+                    cleanupMainSocket(sock);
+                    scheduleMainReconnect(2000);
                 }
             }, 3000);
         }
@@ -269,49 +289,25 @@ ${rosa}─────── ❀ ───────${reset}
                             'Stream Errored'
                         );
 
+                    cleanupMainSocket(sock);
+
                     if (statusCode === 515 || isStreamError) {
                         console.log(
                             `${lila}[ RECONNECT ] Reiniciando socket por actualización de sesión...${reset}`
                         );
-
-                        setTimeout(() => {
-                            startBot().catch((error) => {
-                                console.error(
-                                    `${rojo}[ ERROR RECONNECT ]${reset}`,
-                                    error
-                                );
-                            });
-                        }, 2000);
+                        scheduleMainReconnect(2000);
 
                     } else if (statusCode === DisconnectReason.loggedOut) {
                         console.log(
                             `${rosa}[ SESSION ] Sesión cerrada desde el teléfono. Limpiando...${reset}`
                         );
-
-                        limpiarSesion();
-
-                        setTimeout(() => {
-                            startBot().catch((error) => {
-                                console.error(
-                                    `${rojo}[ ERROR SESSION ]${reset}`,
-                                    error
-                                );
-                            });
-                        }, 2000);
+                        scheduleMainReconnect(2000, true);
 
                     } else {
                         console.log(
                             `${lila}[ CONEXION ] Desconectado (Status ${statusCode}). Reintentando...${reset}`
                         );
-
-                        setTimeout(() => {
-                            startBot().catch((error) => {
-                                console.error(
-                                    `${rojo}[ ERROR RECONNECT ]${reset}`,
-                                    error
-                                );
-                            });
-                        }, 3000);
+                        scheduleMainReconnect(3000);
                     }
                 }
             } catch (err) {

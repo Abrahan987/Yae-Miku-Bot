@@ -2,7 +2,7 @@ import './config.ts';
 import type { WASocket } from '@whiskeysockets/baileys';
 import { serialize, UserJid, decodeJid, rememberParticipants, learnLid } from '#simple';
 import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageCount, getSetting } from '#db';
-import { loadPlugins, watchPlugins, commandMap, pluginData } from '#loader';
+import { commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
 import { isAntilinkEnabled, containsLink, containsWhatsappLink } from './src/lib/antilink.ts';
 import { getWelcomeConfig, sendWelcome, type WelcomeKind } from './src/lib/welcome.ts';
@@ -13,8 +13,6 @@ import { runWithBot, installBotIdentity, setMainSocket } from './src/lib/botcont
 import { isPrivateModeEnabled } from './src/lib/private_mode.ts';
 
 installBotIdentity();
-loadPlugins().catch(() => {});
-watchPlugins();
 
 const DUP_LIMIT = 2000;
 const metaTtlMs = 300000;
