@@ -1,3 +1,4 @@
+
 import {
     proto,
     type BinaryNode,
@@ -5,6 +6,7 @@ import {
     generateWAMessageFromContent,
     prepareWAMessageMedia
 } from '@whiskeysockets/baileys';
+
 import {
     resolveBotName,
     resolveBotBanner
@@ -45,13 +47,27 @@ const categoryConfig = [
         key: 'grupos',
         title: 'GRUPOS',
         emoji: '🍓',
-        aliases: ['grupos', 'grupo', 'group', 'groups', 'admin', 'administracion']
+        aliases: [
+            'grupos',
+            'grupo',
+            'group',
+            'groups',
+            'admin',
+            'administracion'
+        ]
     },
     {
         key: 'herramientas',
         title: 'HERRAMIENTAS',
         emoji: '🧰',
-        aliases: ['herramientas', 'tools', 'utilidades', 'utils', 'stickers', 'sticker']
+        aliases: [
+            'herramientas',
+            'tools',
+            'utilidades',
+            'utils',
+            'stickers',
+            'sticker'
+        ]
     },
     {
         key: 'economia',
@@ -128,7 +144,9 @@ function getCategories(pluginData: any): MenuCategory[] {
     }
 
     for (const data of pluginData.values()) {
-        const rawCategory = normalize(data.category || 'otros');
+        const rawCategory = normalize(
+            data.category || 'otros'
+        );
 
         const config = categoryConfig.find(item =>
             item.aliases.includes(rawCategory)
@@ -142,20 +160,27 @@ function getCategories(pluginData: any): MenuCategory[] {
         const commands = Array.isArray(data.commands)
             ? data.commands
                 .filter(Boolean)
-                .map((value: unknown) => String(value).toLowerCase())
+                .map(
+                    (value: unknown) =>
+                        String(value).toLowerCase()
+                )
             : [];
 
         if (!commands.length) continue;
 
         const exists = current.items.some(item =>
-            item.commands.some(cmd => commands.includes(cmd))
+            item.commands.some(
+                cmd => commands.includes(cmd)
+            )
         );
 
         if (exists) continue;
 
         current.items.push({
             commands,
-            description: String(data.description || 'Sin descripción')
+            description: String(
+                data.description || 'Sin descripción'
+            )
         });
     }
 
@@ -189,22 +214,47 @@ async function sendTextMenu(
     showNavigation: boolean
 ) {
     const header = `${getMenuHeader(botName)}\n\n`;
+
     const navigation = showNavigation
-        ? `🪷 Lista interactiva: *${prefix}menu lista*\n\n`
         ? `🪷 Lista interactiva: *${prefix}menu*\n\n`
         : '';
+
     let page = header + navigation;
 
     for (const category of categories) {
-        const title = `${category.emoji}͜ᩧ𑂳ᰍ  *${category.title}*\n\n`;
+        const title =
+            `${category.emoji}͜ᩧ𑂳ᰍ  *${category.title}*\n\n`;
+
         let showTitle = true;
 
         for (const item of category.items) {
-            const commands = item.commands.map(cmd => `${prefix}${cmd}`).join(' • ');
-            const block = `> *${commands}*\n> ${item.description}\n\n`;
-            if (page.length + (showTitle ? title.length : 0) + block.length + menuFooter.length > 3500 &&
-                page !== header && page !== header + navigation) {
-                await sock.sendMessage(remoteJid, { text: page + menuFooter, contextInfo }, { quoted: msg });
+            const commands = item.commands
+                .map(cmd => `${prefix}${cmd}`)
+                .join(' • ');
+
+            const block =
+                `> *${commands}*\n> ${item.description}\n\n`;
+
+            const nextLength =
+                page.length +
+                (showTitle ? title.length : 0) +
+                block.length +
+                menuFooter.length;
+
+            if (
+                nextLength > 3500 &&
+                page !== header &&
+                page !== header + navigation
+            ) {
+                await sock.sendMessage(
+                    remoteJid,
+                    {
+                        text: page + menuFooter,
+                        contextInfo
+                    },
+                    { quoted: msg }
+                );
+
                 page = header;
                 showTitle = true;
             }
@@ -213,11 +263,19 @@ async function sendTextMenu(
                 page += title;
                 showTitle = false;
             }
+
             page += block;
         }
     }
 
-    return sock.sendMessage(remoteJid, { text: page + menuFooter, contextInfo }, { quoted: msg });
+    return sock.sendMessage(
+        remoteJid,
+        {
+            text: page + menuFooter,
+            contextInfo
+        },
+        { quoted: msg }
+    );
 }
 
 export default async function (
@@ -228,7 +286,9 @@ export default async function (
     const remoteJid = msg.key?.remoteJid || msg.from;
 
     if (!remoteJid) {
-        throw new Error('No se pudo obtener el chat de destino.');
+        throw new Error(
+            'No se pudo obtener el chat de destino.'
+        );
     }
 
     const botName = resolveBotName(
@@ -236,25 +296,41 @@ export default async function (
         global.namebot || 'YAE MIKU BOT'
     );
 
-    const categories = getCategories(extra.pluginData);
+    const categories = getCategories(
+        extra?.pluginData
+    );
 
     const contextInfo = {
         forwardingScore: 1,
         isForwarded: true,
         forwardedNewsletterMessageInfo: {
             newsletterJid: global.rcanal,
-            newsletterName: '𓈒𓂃 𝚈𝚄𝙺𝙺𝙸 & 𝚈𝙰𝙴 𝙱𝙾𝚃 🍓'
+            newsletterName:
+                '𓈒𓂃 𝚈𝚄𝙺𝙺𝙸 & 𝚈𝙰𝙴 𝙱𝙾𝚃 🍓'
         }
     };
 
-    const selection = normalize(extra.args?.[0] || '');
-    const prefix = getPrefix();
-    const sendFallback = () => sendTextMenu(
-        sock, msg, remoteJid, categories, botName, prefix, contextInfo, true
+    const selection = normalize(
+        extra?.args?.[0] || ''
     );
+
+    const prefix = getPrefix();
+
+    const sendFallback = () =>
+        sendTextMenu(
+            sock,
+            msg,
+            remoteJid,
+            categories,
+            botName,
+            prefix,
+            contextInfo,
+            true
+        );
 
     if (selection.startsWith('cat_')) {
         const categoryKey = selection.slice(4);
+
         const selected = categories.find(
             item => item.key === categoryKey
         );
@@ -266,7 +342,14 @@ export default async function (
         }
 
         return sendTextMenu(
-            sock, msg, remoteJid, [selected], botName, prefix, contextInfo, false
+            sock,
+            msg,
+            remoteJid,
+            [selected],
+            botName,
+            prefix,
+            contextInfo,
+            false
         );
     }
 
@@ -276,115 +359,205 @@ export default async function (
         );
     }
 
-    if (selection !== 'lista') return sendFallback();
-    if (selection === 'texto') return sendFallback();
+    if (selection === 'texto') {
+        return sendFallback();
+    }
+
+    if (selection && selection !== 'lista') {
+        return sendFallback();
+    }
 
     const rows = categories.map(item => ({
         header: item.emoji,
         title: item.title,
-        description: `${item.items.length} comandos disponibles`,
+        description:
+            `${item.items.length} opciones disponibles`,
         id: `${prefix}menu cat_${item.key}`
     }));
 
-    const sections = [{
-        title: '🍓 CATEGORÍAS DE YAE',
-        rows
-    }];
+    const sections = [
+        {
+            title: '🍓 CATEGORÍAS DE YAE',
+            rows
+        }
+    ];
 
-    let preparedMedia: Awaited<ReturnType<typeof prepareWAMessageMedia>> | null = null;
-    let banner: ReturnType<typeof resolveBotBanner> = null;
+    let preparedMedia:
+        Awaited<ReturnType<typeof prepareWAMessageMedia>>
+        | null = null;
+
+    let banner:
+        ReturnType<typeof resolveBotBanner> = null;
+
     try {
-        banner = resolveBotBanner(sock, global.icono);
-        const image = banner?.buffer || (banner?.url ? { url: banner.url } : undefined);
+        banner = resolveBotBanner(
+            sock,
+            global.icono
+        );
+
+        const image = banner?.buffer ||
+            (
+                banner?.url
+                    ? { url: banner.url }
+                    : undefined
+            );
+
         if (image) {
-            preparedMedia = await prepareWAMessageMedia({ image }, { upload: sock.waUploadToServer });
+            preparedMedia = await prepareWAMessageMedia(
+                { image },
+                {
+                    upload: sock.waUploadToServer
+                }
+            );
         }
     } catch (error) {
-        console.error('[MENU BANNER ERROR]:', error);
-        if (global.icono && banner?.url !== global.icono) {
+        console.error(
+            '[MENU BANNER ERROR]:',
+            error
+        );
+
+        if (
+            global.icono &&
+            banner?.url !== global.icono
+        ) {
             try {
-                preparedMedia = await prepareWAMessageMedia(
-                    { image: { url: global.icono } }, { upload: sock.waUploadToServer }
-                );
+                preparedMedia =
+                    await prepareWAMessageMedia(
+                        {
+                            image: {
+                                url: global.icono
+                            }
+                        },
+                        {
+                            upload: sock.waUploadToServer
+                        }
+                    );
             } catch (fallbackError) {
-                console.error('[MENU DEFAULT BANNER ERROR]:', fallbackError);
+                console.error(
+                    '[MENU DEFAULT BANNER ERROR]:',
+                    fallbackError
+                );
             }
         }
     }
 
-    const additionalNodes: BinaryNode[] = [{
-        tag: 'biz',
-        attrs: {},
-        content: [{
-            tag: 'interactive',
-            attrs: { type: 'native_flow', v: '1' },
-            content: [{ tag: 'native_flow', attrs: { name: 'mixed', v: '9' } }]
-        }]
-    }];
+    const additionalNodes: BinaryNode[] = [
+        {
+            tag: 'biz',
+            attrs: {},
+            content: [
+                {
+                    tag: 'interactive',
+                    attrs: {
+                        type: 'native_flow',
+                        v: '1'
+                    },
+                    content: [
+                        {
+                            tag: 'native_flow',
+                            attrs: {
+                                name: 'mixed',
+                                v: '9'
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ];
+
     if (!isJidGroup(remoteJid)) {
-        additionalNodes.unshift({ tag: 'bot', attrs: { biz_bot: '1' } });
+        additionalNodes.unshift({
+            tag: 'bot',
+            attrs: {
+                biz_bot: '1'
+            }
+        });
     }
 
-    const sendInteractive = async (media: typeof preparedMedia) => {
-        const header = proto.Message.InteractiveMessage.Header.create({
-            title: botName.toUpperCase(),
-            hasMediaAttachment: Boolean(media?.imageMessage),
-            imageMessage: media?.imageMessage
-        });
+    const sendInteractive = async (
+        media: typeof preparedMedia
+    ) => {
+        const header =
+            proto.Message.InteractiveMessage.Header.create({
+                title: botName.toUpperCase(),
+                hasMediaAttachment:
+                    Boolean(media?.imageMessage),
+                imageMessage: media?.imageMessage
+            });
 
         const interactiveMessage =
             proto.Message.InteractiveMessage.create({
                 header,
-                body: proto.Message.InteractiveMessage.Body.create({
-                    text: `${getMenuHeader(botName)}
 
-🪷 Toca *Mostrar comandos* para abrir la lista y seleccionar una categoría.\nSi no aparece el botón, escribe *${prefix}menu*.`
-🪷 Toca *Mostrar comandos* para abrir la lista y seleccionar una categoría.\nSi no aparece el botón, escribe *${prefix}menu texto*.`
-                }),
-                footer: proto.Message.InteractiveMessage.Footer.create({
-                    text: '𐴲੭  ˙ 𓂃  🍥  𓂃  ˙'
-                }),
+                body:
+                    proto.Message.InteractiveMessage.Body.create({
+                        text: `${getMenuHeader(botName)}
+
+🪷 Toca *Mostrar comandos* para abrir la lista y seleccionar una categoría.
+
+🍥 Si no aparece el botón, escribe *${prefix}menu texto*.`
+                    }),
+
+                footer:
+                    proto.Message.InteractiveMessage.Footer.create({
+                        text:
+                            '𐴲੭  ˙ 𓂃  🍥  𓂃  ˙'
+                    }),
+
                 nativeFlowMessage:
                     proto.Message.InteractiveMessage.NativeFlowMessage.create({
-                        buttons: [{
-                            name: 'single_select',
-                            buttonParamsJson: JSON.stringify({
-                                title: 'Mostrar comandos',
-                                sections
-                            })
-                        }]
+                        messageVersion: 1,
+                        messageParamsJson: '{}',
+                        buttons: [
+                            {
+                                name: 'single_select',
+                                buttonParamsJson:
+                                    JSON.stringify({
+                                        title:
+                                            'Mostrar comandos',
+                                        sections
+                                    })
+                            }
+                        ]
                     }),
+
                 contextInfo
             });
 
-        const message = generateWAMessageFromContent(
-            remoteJid,
-            {
-                viewOnceMessage: {
-                    message: {
-                        messageContextInfo: {
-                            deviceListMetadata: {},
-                            deviceListMetadataVersion: 2
-                        },
-                        interactiveMessage
+        const message =
+            generateWAMessageFromContent(
+                remoteJid,
+                {
+                    viewOnceMessage: {
+                        message: {
+                            messageContextInfo: {
+                                deviceListMetadata: {},
+                                deviceListMetadataVersion: 2
+                            },
+                            interactiveMessage
+                        }
                     }
+                },
+                {
+                    userJid: sock.user?.id || '',
+                    quoted: msg
                 }
-            },
-            {
-                userJid: sock.user?.id || '',
-                quoted: msg
-            }
-        );
+            );
 
-        if (!message.message || !message.key.id) {
-            throw new Error('No se pudo generar el mensaje interactivo.');
+        if (
+            !message.message ||
+            !message.key.id
+        ) {
+            throw new Error(
+                'No se pudo generar el mensaje interactivo.'
+            );
         }
 
         return sock.relayMessage(
             remoteJid,
             message.message,
             {
-                messageId: message.key.id
                 messageId: message.key.id,
                 additionalNodes
             }
@@ -392,13 +565,20 @@ export default async function (
     };
 
     try {
-        return await sendInteractive(preparedMedia);
+        return await sendInteractive(
+            preparedMedia
+        );
     } catch (error) {
-        console.error('[MENU INTERACTIVE ERROR]:', error);
+        console.error(
+            '[MENU INTERACTIVE ERROR]:',
+            error
+        );
 
         if (preparedMedia) {
             try {
-                return await sendInteractive(null);
+                return await sendInteractive(
+                    null
+                );
             } catch (retryError) {
                 console.error(
                     '[MENU INTERACTIVE RETRY ERROR]:',
