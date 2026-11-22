@@ -1,4 +1,5 @@
 import { withGacha, findCharacter, getCharRow, saveCharRow, cd, cdLeft, cdSet, fmtTime, afterCommand } from '../lib/gacha.ts';
+import { isPremiumUser } from '../lib/database.ts';
 
 export const command = ['vote', 'votar'];
 export const category = 'gacha';
@@ -22,7 +23,7 @@ export default withGacha(async ({ userJid, extra, reply }) => {
     const today = new Date().toISOString().slice(0, 10);
     const row = getCharRow(char.id) || { charId: char.id, value: char.value, votes: 0, lastVotedAt: 0, dayKey: '', dayInc: 0 };
 
-    if (row.lastVotedAt && now < row.lastVotedAt + CHAR_COOLDOWN) {
+    if (!isPremiumUser(userJid) && row.lastVotedAt && now < row.lastVotedAt + CHAR_COOLDOWN) {
         const remaining = row.lastVotedAt + CHAR_COOLDOWN - now;
         return reply('VOTO', `*${char.name}* ha sido votada recientemente.\n> Debes esperar *${fmtTime(remaining)}* para votarla de nuevo.`);
     }

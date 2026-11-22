@@ -15,6 +15,8 @@ after(() => {
 
 mock.module('@whiskeysockets/baileys', { namedExports: {
     proto: {},
+    isJidGroup: jid => String(jid || '').endsWith('@g.us'),
+    generateWAMessageFromContent: () => ({ key: { id: 'premium-menu' }, message: {} }),
     getContentType: message => Object.keys(message)[0],
     jidDecode: jid => {
         const [user, server] = jid.split('@');
@@ -265,6 +267,36 @@ test('fast group commands skip metadata only when admin-only mode is disabled', 
             assert.equal(runs, 3);
             assert.equal(lookups, 1);
             assert.equal(db.db.prepare('SELECT message_count FROM message_stats WHERE groupJid = ? AND userJid = ?').get(chat, '573003@s.whatsapp.net').message_count, 3);
+});
+
+test('premium plans use yen, persist per LID and bypass economy cooldowns', async () => {
+    const { default: gift } = await import('../src/plugins/gift.ts');
+    const { getUser, updateUser, getCooldown, setCooldown, isPremiumUser, getPremiumUntil } = await import('../src/lib/database.ts');
+    const sender = '573010@s.whatsapp.net';
+    updateUser(sender, { yen: 1300000, bank: 0, banned: 0 });
+
+    const replies = [];
+    const sock = {
+        user: { id: '573001@s.whatsapp.net' },
+        relayMessage: async (_chat, content) => replies.push(content)
+    };
+    const msg = {
+        from: '123@g.us',
+        sender,
+        key: { remoteJid: '123@g.us', participant: sender },
+        reply: async text => replies.push({ text })
+    };
+
+    await gift(sock, msg, { command: 'comprarprem', args: ['1'] });
+    assert.equal(getUser(sender).yen, 1275000);
+    assert.equal(isPremiumUser(sender), true);
+    assert.ok(getPremiumUntil(sender) > Date.now());
+
+    setCooldown(sender, 'work', Date.now() + 3600000);
+    assert.equal(getCooldown(sender, 'work'), 0);
+
+    await gift(sock, msg, { command: 'comprarprem', args: ['10'] });
+    assert.equal(getUser(sender).yen, 75000);
 });
 
 test('ping reports WhatsApp response, processing and message age', async () => {

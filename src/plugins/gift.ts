@@ -1,7 +1,12 @@
-import { getUser, updateUser, getCooldown, setCooldown } from '../lib/database.ts';
+import {
+    proto,
+    isJidGroup,
+    generateWAMessageFromContent
+} from '@whiskeysockets/baileys';
+import { getUser, updateUser, getCooldown, setCooldown, getPremiumUntil, isPremiumUser, addPremium } from '../lib/database.ts';
 import { isOwner, deco, warn } from '../lib/perms.ts';
 
-export const command = ['gift', 'regalo', 'regalar', 'givecoins', 'pay', 'coinsgive', 'chetar', 'daryenes'];
+export const command = ['gift', 'regalo', 'regalar', 'givecoins', 'pay', 'coinsgive', 'chetar', 'daryenes', 'premiun', 'premium', 'comprarprem'];
 export const category = 'economia';
 export const description = 'Regalar dinero a otros usuarios.';
 export const admin = false;
@@ -20,6 +25,120 @@ function formatTime(ms: number): string {
     return parts.join(' ');
 }
 
+const PREMIUM_PLANS = [
+    { id: 1, title: 'Premium Exprés', duration: 60 * 60 * 1000, price: 25000 },
+    { id: 2, title: 'Premium 3 Horas', duration: 3 * 60 * 60 * 1000, price: 70000 },
+    { id: 3, title: 'Premium 6 Horas', duration: 6 * 60 * 60 * 1000, price: 130000 },
+    { id: 4, title: 'Premium 12 Horas', duration: 12 * 60 * 60 * 1000, price: 240000 },
+    { id: 5, title: 'Premium 18 Horas', duration: 18 * 60 * 60 * 1000, price: 350000 },
+    { id: 6, title: 'Premium 1 Día', duration: 24 * 60 * 60 * 1000, price: 450000 },
+    { id: 7, title: 'Premium 36 Horas', duration: 36 * 60 * 60 * 1000, price: 650000 },
+    { id: 8, title: 'Premium 2 Días', duration: 48 * 60 * 60 * 1000, price: 800000 },
+    { id: 9, title: 'Premium 60 Horas', duration: 60 * 60 * 60 * 1000, price: 950000 },
+    { id: 10, title: 'Premium 3 Días', duration: 72 * 60 * 60 * 1000, price: 1200000 }
+];
+
+function formatDuration(ms: number): string {
+    const hours = ms / (60 * 60 * 1000);
+    if (hours === 1) return '1 hora';
+    if (hours < 24) return `${hours} horas`;
+    const days = hours / 24;
+    return `${days} ${days === 1 ? 'día' : 'días'}`;
+}
+
+async function sendPremiumMenu(sock: any, msg: any) {
+    const remoteJid = msg.key?.remoteJid || msg.from;
+    if (!remoteJid) throw new Error('No se pudo obtener el chat de destino.');
+
+    const prefix = Array.isArray((global as any).prefix)
+        ? (global as any).prefix[0] || '.'
+        : '.';
+
+    const rows = PREMIUM_PLANS.map(plan => ({
+        header: 'PREMIUM',
+        title: plan.title,
+        description: `¥${plan.price.toLocaleString()} - ${formatDuration(plan.duration)}`,
+        id: `${prefix}comprarprem ${plan.id}`
+    }));
+
+    const interactiveMessage = proto.Message.InteractiveMessage.create({
+        header: proto.Message.InteractiveMessage.Header.create({
+            title: 'TIENDA PREMIUM YAE',
+            hasMediaAttachment: false
+        }),
+        body: proto.Message.InteractiveMessage.Body.create({
+            text: '🍓 Elige un plan. Premium elimina los cooldowns de economía, RPG y gacha mientras esté activo.'
+        }),
+        footer: proto.Message.InteractiveMessage.Footer.create({
+            text: 'Pago exclusivo con yenes'
+        }),
+        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+            messageVersion: 1,
+            messageParamsJson: '{}',
+            buttons: [{
+                name: 'single_select',
+                buttonParamsJson: JSON.stringify({
+                    title: 'Comprar Premium',
+                    sections: [{
+                        title: 'PLANES PREMIUM',
+                        rows
+                    }]
+                })
+            }]
+        }),
+        contextInfo: {
+            forwardingScore: 1,
+            isForwarded: true
+        }
+    });
+
+    const message = generateWAMessageFromContent(
+        remoteJid,
+        {
+            viewOnceMessage: {
+                message: {
+                    messageContextInfo: {
+                        deviceListMetadata: {},
+                        deviceListMetadataVersion: 2
+                    },
+                    interactiveMessage
+                }
+            }
+        },
+        {
+            userJid: sock.user?.id || '',
+            quoted: msg
+        }
+    );
+
+    if (!message.message || !message.key.id) {
+        throw new Error('No se pudo generar el menú Premium.');
+    }
+
+    const additionalNodes: any[] = [{
+        tag: 'biz',
+        attrs: {},
+        content: [{
+            tag: 'interactive',
+            attrs: { type: 'native_flow', v: '1' },
+            content: [{ tag: 'native_flow', attrs: { name: 'mixed', v: '9' } }]
+        }]
+    }];
+
+    if (!isJidGroup(remoteJid)) {
+        additionalNodes.unshift({ tag: 'bot', attrs: { biz_bot: '1' } });
+    }
+
+    return sock.relayMessage(
+        remoteJid,
+        message.message,
+        {
+            messageId: message.key.id,
+            additionalNodes
+        }
+    );
+}
+
 export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {
     const sender = msg.sender;
     const args = extra.args;
@@ -27,6 +146,41 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
 
     try {
         const action = String(extra.command || 'gift').toLowerCase();
+        if (['premiun', 'premium', 'comprarprem'].includes(action)) {
+            const planNumber = parseInt(args.find((value: string) => /^\d+$/.test(value)) || '', 10);
+
+            if (!planNumber) {
+                return sendPremiumMenu(sock, msg);
+            }
+
+            const plan = PREMIUM_PLANS.find(item => item.id === planNumber);
+            if (!plan) {
+                return msg.reply(deco('𝙿𝚁𝙴𝙼𝙸𝚄𝙼', '🪷 Selecciona un plan válido del 1 al 10.'));
+            }
+
+            const user = getUser(sender);
+            if ((user.yen || 0) < plan.price) {
+                return msg.reply(deco(
+                    '𝙿𝚁𝙴𝙼𝙸𝚄𝙼',
+                    `🪷 No tienes suficientes yenes.\n> Necesitas: *¥${plan.price.toLocaleString()}*\n> Tienes: *¥${(user.yen || 0).toLocaleString()}*`
+                ));
+            }
+
+            const until = addPremium(sender, plan.duration);
+            updateUser(sender, { yen: (user.yen || 0) - plan.price });
+
+            const untilText = new Intl.DateTimeFormat('es-CO', {
+                dateStyle: 'medium',
+                timeStyle: 'short'
+            }).format(new Date(until));
+
+            return msg.reply(deco(
+                '𝙿𝚁𝙴𝙼𝙸𝚄𝙼',
+                `🪷 Compraste *${plan.title}* por *¥${plan.price.toLocaleString()}*.\n` +
+                `> Activo hasta: *${untilText}*\n` +
+                `> Cooldowns de economía, juegos y gacha eliminados.`
+            ));
+        }
         if (action === 'chetar') {
             if (!isOwner(sock, msg, rawMsg)) {
                 return sock.sendMessage(msg.from, { text: warn.owner() }, { quoted: msg });

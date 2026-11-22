@@ -23,7 +23,8 @@ export async function loadDB() {
             yen INTEGER DEFAULT 0,
             banned INTEGER DEFAULT 0,
             bank INTEGER DEFAULT 0,
-            lid TEXT DEFAULT ''
+            lid TEXT DEFAULT '',
+            premium_until INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS groups (
@@ -124,6 +125,7 @@ function migrateUsers(): void {
     const cols = (db.prepare('PRAGMA table_info(users)').all() as any[]).map((c) => c.name);
     if (!cols.includes('bank')) db.exec('ALTER TABLE users ADD COLUMN bank INTEGER DEFAULT 0');
     if (!cols.includes('lid')) db.exec("ALTER TABLE users ADD COLUMN lid TEXT DEFAULT ''");
+    if (!cols.includes('premium_until')) db.exec('ALTER TABLE users ADD COLUMN premium_until INTEGER DEFAULT 0');
     db.exec('CREATE INDEX IF NOT EXISTS idx_users_lid ON users (lid)');
 
     const lidRows = db.prepare("SELECT jid FROM users WHERE jid LIKE '%@lid'").all() as any[];
@@ -170,15 +172,16 @@ function absorbUser(from: string, to: string, lid: string): void {
     db.exec('SAVEPOINT absorb_user');
     try {
         if (!dst) {
-            db.prepare('INSERT INTO users (jid, name, yen, bank, banned, lid) VALUES (?, ?, ?, ?, ?, ?)')
-                .run(to, src.name || '', src.yen || 0, src.bank || 0, src.banned || 0, lid || src.lid || '');
+            db.prepare('INSERT INTO users (jid, name, yen, bank, banned, lid, premium_until) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                .run(to, src.name || '', src.yen || 0, src.bank || 0, src.banned || 0, lid || src.lid || '', src.premium_until || 0);
         } else {
-            db.prepare('UPDATE users SET name = ?, yen = ?, bank = ?, banned = ?, lid = ? WHERE jid = ?').run(
+            db.prepare('UPDATE users SET name = ?, yen = ?, bank = ?, banned = ?, lid = ?, premium_until = ? WHERE jid = ?').run(
                 dst.name || src.name || '',
                 (dst.yen || 0) + (src.yen || 0),
                 (dst.bank || 0) + (src.bank || 0),
                 Math.max(dst.banned || 0, src.banned || 0),
                 dst.lid || lid || src.lid || '',
+                Math.max(dst.premium_until || 0, src.premium_until || 0),
                 to
             );
         }
@@ -223,7 +226,7 @@ export function getUser(jid: string) {
 
     if (!user) {
         db.prepare('INSERT INTO users (jid, lid) VALUES (?, ?)').run(id.jid, lid);
-        user = { jid: id.jid, name: '', yen: 0, banned: 0, bank: 0, lid };
+        user = { jid: id.jid, name: '', yen: 0, banned: 0, bank: 0, lid, premium_until: 0 };
     } else if (lid && !user.lid) {
         db.prepare('UPDATE users SET lid = ? WHERE jid = ?').run(lid, id.jid);
         user.lid = lid;
@@ -240,6 +243,7 @@ export function updateUser(
         bank: number;
         banned: number;
         lid: string;
+        premium_until: number;
     }>
 ) {
     const user = getUser(jid);
@@ -247,7 +251,7 @@ export function updateUser(
 
     db.prepare(`
         UPDATE users
-        SET name = ?, yen = ?, bank = ?, banned = ?, lid = ?
+        SET name = ?, yen = ?, bank = ?, banned = ?, lid = ?, premium_until = ?
         WHERE jid = ?
     `).run(
         updated.name || '',
@@ -255,6 +259,7 @@ export function updateUser(
         updated.bank || 0,
         updated.banned || 0,
         updated.lid || '',
+        updated.premium_until || 0,
         user.jid
     );
 
@@ -451,10 +456,28 @@ export function resetWarnings(
 }
 
 export function getCooldown(userJid: string, action: string): number {
+    if (isPremiumUser(userJid)) return 0;
     const row = db
         .prepare('SELECT until_time FROM economy_cooldowns WHERE userJid = ? AND action = ?')
         .get(userJid, action) as any;
     return row ? Number(row.until_time) : 0;
+}
+
+export function getPremiumUntil(userJid: string): number {
+    const user = getUser(userJid);
+    return Number(user?.premium_until || 0);
+}
+
+export function isPremiumUser(userJid: string): boolean {
+    return getPremiumUntil(userJid) > Date.now();
+}
+
+export function addPremium(userJid: string, durationMs: number): number {
+    const user = getUser(userJid);
+    const now = Date.now();
+    const until = Math.max(Number(user.premium_until || 0), now) + durationMs;
+    updateUser(userJid, { premium_until: until });
+    return until;
 }
 
 export function setCooldown(userJid: string, action: string, untilTime: number): void {
