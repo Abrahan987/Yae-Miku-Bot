@@ -239,6 +239,37 @@ test('fast group commands skip metadata only when admin-only mode is disabled', 
             assert.equal(db.db.prepare('SELECT message_count FROM message_stats WHERE groupJid = ? AND userJid = ?').get(chat, '573003@s.whatsapp.net').message_count, 3);
 });
 
+test('ping reports WhatsApp response, processing and message age', async () => {
+    const { default: ping } = await import('../src/plugins/ping.ts');
+    const sent = [];
+    const sock = {
+        sendMessage: async (_chat, content) => {
+            if (!content.edit) {
+                await new Promise(resolve => setTimeout(resolve, 5));
+            }
+            sent.push(content);
+            return content.edit ? {} : { key: { id: 'ping-key' } };
+        }
+    };
+    const msg = {
+        from: '123@g.us',
+        pushName: 'Yae',
+        messageTimestamp: Math.floor(Date.now() / 1000) - 2
+    };
+    await ping(sock, msg, { command: 'ping' }, {
+        getUser: async () => ({ name: 'Yae', yen: 1234 }),
+        incrementCommandCount: () => 42
+    });
+    assert.equal(sent.length, 2);
+    assert.match(sent[0].text, /PONG/);
+    assert.match(sent[0].text, /Midiendo/);
+    assert.equal(sent[1].edit.id, 'ping-key');
+    assert.match(sent[1].text, /Respuesta de WhatsApp/);
+    assert.match(sent[1].text, /Procesamiento/);
+    assert.match(sent[1].text, /Mensaje recibido/);
+    assert.match(sent[1].text, /Comandos ejecutados.*42/s);
+});
+
 test('brat commands encode text and generate static and animated stickers', async () => {
                 const { default: sticker, command } = await import('../src/plugins/sticker.ts');
                 const webp = await import('node-webpmux');
