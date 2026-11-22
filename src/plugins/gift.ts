@@ -1,6 +1,7 @@
 import { getUser, updateUser, getCooldown, setCooldown } from '../lib/database.ts';
+import { isOwner, deco, warn } from '../lib/perms.ts';
 
-export const command = ['gift', 'regalo', 'regalar', 'givecoins', 'pay', 'coinsgive'];
+export const command = ['gift', 'regalo', 'regalar', 'givecoins', 'pay', 'coinsgive', 'chetar', 'daryenes'];
 export const category = 'economia';
 export const description = 'Regalar dinero a otros usuarios.';
 export const admin = false;
@@ -19,13 +20,57 @@ function formatTime(ms: number): string {
     return parts.join(' ');
 }
 
-export default async function (sock: any, msg: any, extra: any) {
+export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {
     const sender = msg.sender;
     const args = extra.args;
     const mentioned = msg.mentions || [];
 
     try {
         const action = String(extra.command || 'gift').toLowerCase();
+        if (action === 'chetar') {
+            if (!isOwner(sock, msg, rawMsg)) {
+                return sock.sendMessage(msg.from, { text: warn.owner() }, { quoted: msg });
+            }
+            const amount = parseInt(args.find((value: string) => /^\d+$/.test(value)) || '', 10);
+            if (!Number.isSafeInteger(amount) || amount < 0) {
+                return msg.reply(deco('𝙲𝙷𝙴𝚃𝙰𝚁', `🪷 𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n> ${(global as any).prefix[0]}chetar 1000000`));
+            }
+            const ownerUser = getUser(sender);
+            updateUser(sender, { name: ownerUser.name, yen: amount, bank: ownerUser.bank, banned: ownerUser.banned });
+            return msg.reply(deco('𝙲𝙷𝙴𝚃𝙰𝚁', `🪷 Tus yenes fueron establecidos en *¥${amount.toLocaleString()}*.`));
+        }
+        if (action === 'daryenes') {
+            if (!isOwner(sock, msg, rawMsg)) {
+                return sock.sendMessage(msg.from, { text: warn.owner() }, { quoted: msg });
+            }
+            const recipient = msg.mentionedJid?.[0] || msg.quoted?.sender;
+            const amount = parseInt(args.find((value: string) => /^\d+$/.test(value)) || '', 10);
+            if (!recipient) {
+                return msg.reply(deco('𝙳𝙰𝚁𝙴𝙽𝙴𝚂', `🪷 𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n> ${(global as any).prefix[0]}daryenes @usuario 5000`));
+            }
+            if (!Number.isSafeInteger(amount) || amount < 1) {
+                return msg.reply(deco('𝙳𝙰𝚁𝙴𝙽𝙴𝚂', '🪷 Indica una cantidad válida mayor a cero.'));
+            }
+            const recipientUser = getUser(recipient);
+            const newBalance = (recipientUser.yen || 0) + amount;
+            if (!Number.isSafeInteger(newBalance)) {
+                return msg.reply(deco('𝙳𝙰𝚁𝙴𝙽𝙴𝚂', '🪷 La cantidad excede el límite permitido.'));
+            }
+            updateUser(recipient, {
+                name: recipientUser.name,
+                yen: newBalance,
+                bank: recipientUser.bank,
+                banned: recipientUser.banned
+            });
+            return sock.sendMessage(
+                msg.from,
+                {
+                    text: deco('𝙳𝙰𝚁𝙴𝙽𝙴𝚂', `🪷 Entregaste *¥${amount.toLocaleString()}* a @${recipient.split('@')[0]}.\n> Nuevo saldo: *¥${((recipientUser.yen || 0) + amount).toLocaleString()}*`),
+                    mentions: [recipient]
+                },
+                { quoted: msg }
+            );
+        }
         if (['givecoins', 'pay', 'coinsgive'].includes(action)) {
             const recipient = msg.mentionedJid?.[0] || msg.quoted?.sender;
             const amountArg = args.find((value: string) => /^\d+$/.test(value));

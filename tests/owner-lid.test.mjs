@@ -121,6 +121,34 @@ if (process.env.YAE_BENCHMARK === '1') {
     });
 }
 
+test('owner can set its own yen and give yen, but other users cannot', async () => {
+    const { default: gift } = await import('../src/plugins/gift.ts');
+    const { getUser } = await import('../src/lib/database.ts');
+    const replies = [];
+    const sock = { sendMessage: async (_chat, content) => replies.push(content) };
+    const ownerMsg = {
+        from: '123@g.us',
+        sender: '573001@s.whatsapp.net',
+        isGroup: true,
+        mentionedJid: [],
+        quoted: null,
+        reply: async text => replies.push({ text })
+    };
+    const rawOwner = { key: { fromMe: true, remoteJid: '123@g.us' } };
+    await gift(sock, ownerMsg, { command: 'chetar', args: ['250000'] }, {}, rawOwner);
+    assert.equal(getUser('573001@s.whatsapp.net').yen, 250000);
+
+    const recipient = '573003@s.whatsapp.net';
+    const targetMsg = { ...ownerMsg, mentionedJid: [recipient] };
+    await gift(sock, targetMsg, { command: 'daryenes', args: ['@573003', '5000'] }, {}, rawOwner);
+    assert.equal(getUser(recipient).yen, 5000);
+
+    const otherMsg = { ...ownerMsg, sender: '573003@s.whatsapp.net' };
+    await gift(sock, otherMsg, { command: 'chetar', args: ['999'] }, {}, { key: { fromMe: false, remoteJid: '573003@s.whatsapp.net' } });
+    assert.equal(getUser('573001@s.whatsapp.net').yen, 250000);
+    assert.match(replies.at(-1).text, /owner.*bot|solo puede ser usado por el \*?owner/i);
+});
+
 test('real serializer and LID cache authorize the owner, not another user', async () => {
     const listeners = new Map();
     const replies = [];
