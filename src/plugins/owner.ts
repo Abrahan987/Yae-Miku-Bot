@@ -12,8 +12,6 @@ export default async function (sock: any, msg: any, extra: any) {
     const chatId = msg.from || msg.chat;
 
     try {
-        // El parametro waid es lo que hace que WhatsApp reconozca el numero
-        // y muestre "Enviar mensaje" en lugar de "Invitar".
         const vcard = [
             'BEGIN:VCARD',
             'VERSION:3.0',
