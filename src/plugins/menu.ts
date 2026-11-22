@@ -703,7 +703,8 @@ export default async function (
 
                 body:
                     proto.Message.InteractiveMessage.Body.create({
-                        text: `${getMenuHeader(botName)}
+                        text: `🍓͜ᩧ𑂳ᰍ  𝗛𝗼𝗹𝗮, 𝗯𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼 𝗮𝗹
+𝗺𝗲𝗻𝘂́ 𝗽𝗿𝗶𝗻𝗰𝗶𝗽𝗮𝗹 𝗱𝗲𝗹 𝗯𝗼𝘁.
 
 🪷 Toca *Mostrar comandos* para abrir la lista y seleccionar una categoría.
 
