@@ -178,7 +178,7 @@ function runFFmpegArgs(args: string[]): Promise<void> {
     });
 }
 
-async function addExif(buffer: Buffer, packname: string, author: string): Promise<Buffer> {
+async function addExif(buffer: Buffer, packname: string, author: string, emoji = '🪷'): Promise<Buffer> {
     const img = new (webp as any).Image();
     await img.load(buffer);
 
@@ -186,7 +186,7 @@ async function addExif(buffer: Buffer, packname: string, author: string): Promis
         'sticker-pack-id': `yae-miku-${Date.now()}`,
         'sticker-pack-name': packname,
         'sticker-pack-publisher': author,
-        emojis: ['🪷']
+        emojis: [emoji]
     };
 
     const exifAttr = Buffer.from([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00]);
@@ -205,7 +205,7 @@ async function downloadQuoted(media: any, type: string): Promise<Buffer> {
     return Buffer.concat(chunks);
 }
 
-async function makeAudioSticker(sock: any, msg: any, files: string[]): Promise<void> {
+async function makeAudioSticker(sock: any, msg: any, files: string[], packname: string, author: string): Promise<void> {
     const quoted = msg.quoted;
     if (quoted?.type !== 'videoMessage') {
         await msg.reply(
@@ -246,13 +246,14 @@ async function makeAudioSticker(sock: any, msg: any, files: string[]): Promise<v
     const failedConversion = conversions.find((result) => result.status === 'rejected');
     if (failedConversion?.status === 'rejected') throw failedConversion.reason;
 
-    const [webpBuffer, audioBuffer] = [
+    const [rawWebpBuffer, audioBuffer] = [
         fs.readFileSync(stickerPath),
         fs.readFileSync(audioPath)
     ];
-    if (!webpBuffer.length || !audioBuffer.length) {
+    if (!rawWebpBuffer.length || !audioBuffer.length) {
         throw new Error('El video no contiene una pista de audio y video compatible.');
     }
+    const webpBuffer = await addExif(rawWebpBuffer, packname, author, '🔊');
 
     const upload = { upload: sock.waUploadToServer };
     const [stickerContent, audioContent] = await Promise.all([
@@ -322,7 +323,7 @@ export default async function (sock: any, msg: any, extra: any) {
 
         const bratCommand = String(extra.command || '').toLowerCase();
         if (['stickeraudio', 'sa', 'audiosticker'].includes(bratCommand)) {
-            await makeAudioSticker(sock, msg, files);
+            await makeAudioSticker(sock, msg, files, nameBot, `Creador: ${creador}\nUsuario: ${userName}`);
             return;
         }
 
