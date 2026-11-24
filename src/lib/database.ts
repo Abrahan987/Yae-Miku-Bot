@@ -241,6 +241,26 @@ export function getUser(jid: string) {
     return user;
 }
 
+export function getUserBalance(jid: string) {
+    const id = resolveUserIdentity(jid);
+    const selectBalance = db.prepare(`
+        SELECT jid, name, CAST(yen AS TEXT) AS yen, CAST(bank AS TEXT) AS bank
+        FROM users
+        WHERE jid = ?
+    `);
+    let user = selectBalance.get(id.jid) as any;
+    if (!user && id.lid && id.lid !== id.jid) {
+        user = selectBalance.get(id.lid) as any;
+    }
+
+    if (!user) {
+        const created = getUser(jid);
+        user = { ...created, yen: String(created.yen || 0), bank: String(created.bank || 0) };
+    }
+
+    return user;
+}
+
 export function updateUser(
     jid: string,
     data: Partial<{

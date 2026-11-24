@@ -1,4 +1,4 @@
-import { getUser, db, getCooldown } from '../lib/database.ts';
+import { getUserBalance, db, getCooldown } from '../lib/database.ts';
 
 export const command = ['balance', 'bal', 'saldo', 'dinero', 'economyboard', 'eboard', 'baltop', 'einfo', 'cooldowns', 'economyinfo', 'infoeconomy'];
 export const category = 'economia';
@@ -20,6 +20,11 @@ function formatCooldown(ms: number): string {
     return parts.join(' ');
 }
 
+function formatYen(value: string | number | bigint | null | undefined): string {
+    const amount = BigInt(value || 0);
+    return amount.toLocaleString();
+}
+
 export default async function (sock: any, msg: any, extra: any) {
     const sender = msg.sender;
 
@@ -28,7 +33,7 @@ export default async function (sock: any, msg: any, extra: any) {
         if (['economyboard', 'eboard', 'baltop'].includes(action)) {
             const limit = Math.max(1, Math.min(parseInt(extra.args[0], 10) || 10, 50));
             const rows = db.prepare(`
-                SELECT jid, name, yen, bank
+                SELECT jid, name, CAST(yen AS TEXT) AS yen, CAST(bank AS TEXT) AS bank
                 FROM users
                 WHERE yen + bank > 0
                 ORDER BY yen + bank DESC
@@ -37,8 +42,8 @@ export default async function (sock: any, msg: any, extra: any) {
             if (!rows.length) return msg.reply('❌ No hay datos disponibles en el ranking económico.');
             let text = `🍓 *ECONOMY BOARD*\n\n`;
             rows.forEach((row, index) => {
-                const total = (row.yen || 0) + (row.bank || 0);
-                text += `${index + 1}. *${row.name || row.jid.split('@')[0]}* — ¥${total.toLocaleString()}\n`;
+                const total = BigInt(row.yen || 0) + BigInt(row.bank || 0);
+                text += `${index + 1}. *${row.name || row.jid.split('@')[0]}* — ¥${formatYen(total)}\n`;
             });
             return msg.reply(text);
         }
@@ -53,14 +58,14 @@ export default async function (sock: any, msg: any, extra: any) {
             return msg.reply(text);
         }
         const target = msg.mentionedJid?.[0] || msg.quoted?.sender || sender;
-        const user = getUser(target);
+        const user = getUserBalance(target);
         const displayName = user.name || target.split('@')[0];
 
         return msg.reply(
             `💰 *SALDO DE YEN*\n\n` +
             `🪷 Usuario: *${displayName}*\n` +
-            `💵 Dinero: *¥${(user.yen || 0).toLocaleString()}*\n` +
-            `🏦 Banco: *¥${(user.bank || 0).toLocaleString()}*`
+            `💵 Dinero: *¥${formatYen(user.yen)}*\n` +
+            `🏦 Banco: *¥${formatYen(user.bank)}*`
         );
     } catch (error: any) {
         console.error('[BALANCE ERROR]:', error);

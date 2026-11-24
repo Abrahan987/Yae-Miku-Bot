@@ -394,6 +394,33 @@ test('premium plans use yen, persist per LID and bypass economy cooldowns', asyn
     assert.equal(getUser(sender).yen, 75000);
 });
 
+test('balance commands display SQLite yen values above the safe integer range exactly', async () => {
+    const { default: balance } = await import('../src/plugins/balance.ts');
+    const jid = '573099@s.whatsapp.net';
+    const yen = 9214010099999982n;
+    const bank = 10000000000000001n;
+    db.db.prepare(`
+        INSERT INTO users (jid, name, yen, bank)
+        VALUES (?, ?, ${yen}, ${bank})
+    `).run(jid, 'Rich User');
+
+    const replies = [];
+    const msg = {
+        sender: jid,
+        mentionedJid: [],
+        quoted: null,
+        reply: async text => replies.push(text)
+    };
+
+    await balance({}, msg, { command: 'balance', args: [] });
+    assert.match(replies.at(-1), new RegExp(`¥${yen.toLocaleString()}`));
+    assert.match(replies.at(-1), new RegExp(`¥${bank.toLocaleString()}`));
+
+    await balance({}, msg, { command: 'economyboard', args: ['50'] });
+    const total = yen + bank;
+    assert.match(replies.at(-1), new RegExp(`¥${total.toLocaleString()}`));
+});
+
 test('ping reports WhatsApp response, processing and message age', async () => {
     const { default: ping } = await import('../src/plugins/ping.ts');
     const sent = [];
