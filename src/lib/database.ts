@@ -58,6 +58,12 @@ export async function loadDB() {
             UNIQUE(groupJid, userJid)
         );
 
+        CREATE TABLE IF NOT EXISTS group_muted_users (
+            groupJid TEXT NOT NULL,
+            userJid TEXT NOT NULL,
+            PRIMARY KEY (groupJid, userJid)
+        );
+
         CREATE TABLE IF NOT EXISTS message_stats (
             groupJid TEXT NOT NULL,
             userJid TEXT NOT NULL,
@@ -316,6 +322,42 @@ export function incrementMessageCount(
         ON CONFLICT(groupJid, userJid)
         DO UPDATE SET message_count = message_count + 1
     `)).run(groupJid, userJid);
+}
+
+function moderationUserIds(jids: string[]): string[] {
+    const ids = new Set<string>();
+    for (const jid of jids) {
+        if (typeof jid !== 'string' || !jid) continue;
+        const decoded = decodeJid(jid);
+        if (!decoded.endsWith('@s.whatsapp.net') && !decoded.endsWith('@lid')) continue;
+        ids.add(decoded);
+        const identity = resolveUserIdentity(decoded);
+        if (identity.jid) ids.add(identity.jid);
+    }
+    return [...ids];
+}
+
+export function setGroupUserMuted(groupJid: string, jids: string[], muted: boolean): void {
+    if (!groupJid.endsWith('@g.us')) throw new Error('El mute solo se puede guardar para grupos.');
+    const ids = moderationUserIds(jids);
+    if (!ids.length) throw new Error('No se pudo identificar al usuario del grupo.');
+
+    const insert = db.prepare('INSERT OR IGNORE INTO group_muted_users (groupJid, userJid) VALUES (?, ?)');
+    const remove = db.prepare('DELETE FROM group_muted_users WHERE groupJid = ? AND userJid = ?');
+    for (const id of ids) {
+        if (muted) insert.run(groupJid, id);
+        else remove.run(groupJid, id);
+    }
+}
+
+export function isGroupUserMuted(groupJid: string, jids: string[]): boolean {
+    if (!groupJid.endsWith('@g.us')) return false;
+    const ids = moderationUserIds(jids);
+    if (!ids.length) return false;
+    const placeholders = ids.map(() => '?').join(', ');
+    return Boolean(db.prepare(
+        `SELECT 1 FROM group_muted_users WHERE groupJid = ? AND userJid IN (${placeholders}) LIMIT 1`
+    ).get(groupJid, ...ids));
 }
 
 export function getTopActive(

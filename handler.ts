@@ -1,7 +1,7 @@
 import './config.ts';
 import type { WASocket } from '@whiskeysockets/baileys';
 import { serialize, UserJid, decodeJid, rememberParticipants, learnLid } from '#simple';
-import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageCount, getSetting } from '#db';
+import { getUser, getGroup, updateUser, incrementCommandCount, incrementMessageCount, getSetting, isGroupUserMuted } from '#db';
 import { commandMap, pluginData } from '#loader';
 import { getPrimary } from './src/lib/primary.ts';
 import { isAntilinkEnabled, containsLink, containsWhatsappLink } from './src/lib/antilink.ts';
@@ -391,6 +391,26 @@ export function handler(sock: WASocket) {
 
                 await learnSenderIdentity(sock, rawMsg);
                 const msg = serialize(sock, rawMsg);
+                if (msg?.isGroup && !rawMsg.key.fromMe) {
+                    try {
+                        const senderIds = [
+                            msg.sender,
+                            rawMsg.key.participant,
+                            rawMsg.key.participantAlt,
+                            rawMsg.key.participantPn
+                        ].filter((jid): jid is string => typeof jid === 'string' && Boolean(jid));
+                        if (isGroupUserMuted(msg.from, senderIds)) {
+                            try {
+                                await sock.sendMessage(msg.from, { delete: rawMsg.key });
+                            } catch (error) {
+                                console.error('[MUTE DELETE]:', error);
+                            }
+                            continue;
+                        }
+                    } catch (error) {
+                        console.error('[MUTE CHECK]:', error);
+                    }
+                }
                 if (msg?.isGroup && !rawMsg.key.fromMe) countMessage(msg.from, msg.sender, msgId);
                 if (!msg?.body) continue;
                 const text = msg.body.trim();

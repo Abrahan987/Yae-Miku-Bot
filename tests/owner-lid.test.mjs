@@ -44,8 +44,14 @@ await db.loadDB();
 const { handler } = await import('../handler.ts');
 const { UserJid } = await import('../src/lib/simple.ts');
 const { default: setprefix } = await import('../src/plugins/setprefix.ts');
+const mute = await import('../src/plugins/mute.ts');
+const deleteMessage = await import('../src/plugins/delete.ts');
 const promote = await import('../src/plugins/promote.ts');
 commands.set('setprefix', setprefix);
+mute.default.plugin = { admin: false, botAdmin: false };
+for (const command of mute.command) commands.set(command, mute.default);
+deleteMessage.default.plugin = { admin: false, botAdmin: false };
+for (const command of deleteMessage.command) commands.set(command, deleteMessage.default);
 promote.default.plugin = { admin: promote.admin, botAdmin: promote.botAdmin };
 for (const command of promote.command) commands.set(command, promote.default);
 
@@ -224,6 +230,95 @@ test('autoadmin promotes only the verified owner using the group participant LID
         await send('autoadmin-failure', '901234@lid');
         assert.equal(updates.length, 2);
         assert.match(replies.at(-1), /no confirmó/);
+});
+
+test('mute is group-scoped, admin-only, persistent, and deletes muted messages', async () => {
+    const listeners = new Map();
+    const sentMessages = [];
+    let targetCommands = 0;
+    const group = 'mute-test@g.us';
+    const adminJid = '573010@s.whatsapp.net';
+    const botJid = '573011@s.whatsapp.net';
+    const targetJid = '573012@s.whatsapp.net';
+    const participants = [
+        { id: adminJid, admin: 'admin' },
+        { id: botJid, admin: 'admin' },
+        { id: targetJid, admin: null }
+    ];
+    const sock = {
+        subbotPhone: '573011',
+        user: { id: botJid },
+        ev: { on: (event, fn) => listeners.set(event, fn) },
+        groupMetadata: async () => ({ participants }),
+        sendMessage: async (chat, content) => { sentMessages.push({ chat, ...content }); }
+    };
+    const send = async (id, participant, text, contextInfo = {}) => listeners.get('messages.upsert')({
+        type: 'notify',
+        messages: [{
+            key: { id, remoteJid: group, participant, fromMe: false },
+            message: { extendedTextMessage: { text, contextInfo } }
+        }]
+    });
+
+    commands.set('muted-command-test', async () => { targetCommands++; });
+    handler(sock);
+    await send('mute-command', adminJid, '.mute @573012', { mentionedJid: [targetJid] });
+    assert.equal(db.isGroupUserMuted(group, [targetJid]), true);
+    assert.equal(db.isGroupUserMuted('other-group@g.us', [targetJid]), false);
+
+    await send('muted-message', targetJid, '.muted-command-test');
+    assert.equal(targetCommands, 0);
+    assert.equal(sentMessages.at(-1).delete.id, 'muted-message');
+
+    await send('nonadmin-mute', targetJid, '.mute @573010', { mentionedJid: [adminJid] });
+    assert.equal(db.isGroupUserMuted(group, [adminJid]), false);
+
+    await send('unmute-command', adminJid, '.unmute @573012', { mentionedJid: [targetJid] });
+    assert.equal(db.isGroupUserMuted(group, [targetJid]), false);
+});
+
+test('delete removes the quoted message silently for admins only', async () => {
+    const listeners = new Map();
+    const sentMessages = [];
+    const group = 'delete-test@g.us';
+    const adminJid = '573020@s.whatsapp.net';
+    const botJid = '573021@s.whatsapp.net';
+    const targetJid = '573022@s.whatsapp.net';
+    const sock = {
+        subbotPhone: '573021',
+        user: { id: botJid },
+        ev: { on: (event, fn) => listeners.set(event, fn) },
+        groupMetadata: async () => ({ participants: [
+            { id: adminJid, admin: 'admin' },
+            { id: botJid, admin: 'admin' },
+            { id: targetJid, admin: null }
+        ] }),
+        sendMessage: async (chat, content) => { sentMessages.push({ chat, ...content }); }
+    };
+    const sendDelete = async (id, participant) => listeners.get('messages.upsert')({
+        type: 'notify',
+        messages: [{
+            key: { id, remoteJid: group, participant, fromMe: false },
+            message: { extendedTextMessage: {
+                text: '.del',
+                contextInfo: { stanzaId: 'message-to-delete', participant: targetJid, quotedMessage: { conversation: 'remove this' } }
+            } }
+        }]
+    });
+
+    handler(sock);
+    await sendDelete('admin-delete', adminJid);
+    assert.equal(sentMessages.length, 1);
+    assert.deepEqual(sentMessages[0].delete, {
+        remoteJid: group,
+        fromMe: false,
+        id: 'message-to-delete',
+        participant: targetJid
+    });
+
+    await sendDelete('nonadmin-delete', targetJid);
+    assert.equal(sentMessages.length, 2);
+    assert.match(sentMessages.at(-1).text, /administradores del grupo/);
 });
 
 test('fast group commands skip metadata only when admin-only mode is disabled', async () => {
