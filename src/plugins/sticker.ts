@@ -3,18 +3,24 @@ import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 import { randomUUID } from 'node:crypto';
-import { downloadContentFromMessage } from '@whiskeysockets/baileys';
+import {
+    downloadContentFromMessage,
+    generateWAMessageContent,
+    prepareWAMessageMedia,
+    proto
+} from '@whiskeysockets/baileys';
 import { fileTypeFromBuffer } from 'file-type';
 import webp from 'node-webpmux';
 
-export const command = ['sticker', 's', 'stiker', 'brat', 'bratv', 'bratvideo', 'bratanime'];
+export const command = ['sticker', 's', 'stiker', 'brat', 'bratv', 'bratvideo', 'bratanime', 'stickeraudio', 'sa', 'audiosticker'];
 export const category = 'stickers';
-export const description = 'Convierte una imagen, video, gif, sticker o URL en sticker.';
+export const description = 'Convierte imágenes, videos y texto en stickers, incluidos stickers con audio.';
 export const menu = [
     { command: ['sticker', 's', 'stiker'], description: 'Convierte una imagen o video en sticker.' },
     { command: ['brat'], description: 'Crea un sticker brat con texto.' },
     { command: ['bratv', 'bratvideo'], description: 'Crea un sticker brat animado con texto.' },
-    { command: ['bratanime'], description: 'Crea un sticker brat anime con texto.' }
+    { command: ['bratanime'], description: 'Crea un sticker brat anime con texto.' },
+    { command: ['stickeraudio', 'sa', 'audiosticker'], description: 'Crea un sticker animado con el audio de un video.' }
 ];
 export const admin = false;
 export const botAdmin = false;
@@ -45,6 +51,45 @@ const effectArgs: Record<string, string> = {
 };
 
 const isUrl = (text: string) => /^https?:\/\/\S+$/i.test(text);
+
+function installAudioStickerSupport(): void {
+    const Message = proto.Message as any;
+    if (Message.__yaeAudioStickerInstalled) return;
+
+    const StickerMessage = Message.StickerMessage;
+    const AudioMessage = Message.AudioMessage;
+    const originalStickerEncode = StickerMessage.encode;
+    const originalMessageEncode = Message.encode;
+
+    StickerMessage.encode = function (message: any, writer: any) {
+        writer = originalStickerEncode(message, writer);
+
+        if (message.premium != null) writer.uint32(192).int32(message.premium);
+        if (message.emojis != null) writer.uint32(202).string(message.emojis);
+        if (message.audioMessage) {
+            AudioMessage.encode(message.audioMessage, writer.uint32(210).fork()).ldelim();
+        }
+
+        return writer;
+    };
+
+    Message.encode = function (message: any, writer: any) {
+        if (!message?.stickerMessage?.audioMessage) {
+            return originalMessageEncode(message, writer);
+        }
+
+        const { stickerMessage, ...outer } = message;
+        writer = originalMessageEncode(outer, writer);
+        const container = writer.uint32(1074).fork();
+        const futureProof = container.uint32(10).fork();
+        originalMessageEncode({ stickerMessage }, futureProof).ldelim();
+        return container.ldelim();
+    };
+
+    Message.__yaeAudioStickerInstalled = true;
+}
+
+installAudioStickerSupport();
 
 function helpText(prefix: string) {
     return (
@@ -120,12 +165,16 @@ function runFFmpeg(input: string, output: string, vf: string, animated: boolean)
         ? ['-y', '-i', input, '-t', '10', '-vf', `fps=15,${vf}`, '-an', '-c:v', 'libwebp', '-loop', '0', '-preset', 'default', '-q:v', '60', '-compression_level', '6', output]
         : ['-y', '-i', input, '-vf', vf, '-an', '-frames:v', '1', '-c:v', 'libwebp', '-q:v', '80', output];
 
+    return runFFmpegArgs(args);
+}
+
+function runFFmpegArgs(args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
-        const p = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+        const p = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { stdio: ['ignore', 'ignore', 'pipe'] });
         let err = '';
-        p.stderr.on('data', (d) => (err += d.toString()));
+        p.stderr.on('data', (d) => (err = (err + d.toString()).slice(-1500)));
         p.on('error', reject);
-        p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.slice(-300) || `ffmpeg code ${code}`))));
+        p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err || `ffmpeg code ${code}`))));
     });
 }
 
@@ -154,6 +203,78 @@ async function downloadQuoted(media: any, type: string): Promise<Buffer> {
     const chunks: Buffer[] = [];
     for await (const c of stream) chunks.push(c);
     return Buffer.concat(chunks);
+}
+
+async function makeAudioSticker(sock: any, msg: any, files: string[]): Promise<void> {
+    const quoted = msg.quoted;
+    if (quoted?.type !== 'videoMessage') {
+        await msg.reply(
+            `🍓 Responde a un video con sonido y escribe *${(global as any).prefix?.[0] || '.'}stickeraudio*.`
+        );
+        return;
+    }
+
+    if (Number(quoted.msg?.seconds || 0) > 60) {
+        await msg.reply('⚠️ El video debe durar 60 segundos o menos; el sticker usará los primeros 10.');
+        return;
+    }
+
+    const source = await quoted.download();
+    if (!source?.length) throw new Error('No pude descargar el video citado.');
+    if (source.length > 20 * 1024 * 1024) throw new Error('El video supera el límite de 20 MB.');
+
+    const stamp = randomUUID();
+    const inputPath = path.join(tmpDir, `audio-in-${stamp}.mp4`);
+    const stickerPath = path.join(tmpDir, `audio-sticker-${stamp}.webp`);
+    const audioPath = path.join(tmpDir, `audio-track-${stamp}.ogg`);
+    files.push(inputPath, stickerPath, audioPath);
+    fs.writeFileSync(inputPath, source);
+
+    const conversions = await Promise.allSettled([
+        runFFmpegArgs([
+            '-y', '-i', inputPath, '-map', '0:v:0', '-t', '10',
+            '-vf', 'fps=12,scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=yuva420p',
+            '-an', '-c:v', 'libwebp', '-loop', '0', '-preset', 'default', '-q:v', '55', stickerPath
+        ]),
+        runFFmpegArgs([
+            '-y', '-i', inputPath, '-map', '0:a:0', '-t', '10', '-vn',
+            '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '48k', '-f', 'ogg', audioPath
+        ]).catch((error: Error) => {
+            throw new Error(`No pude extraer el audio; verifica que el video tenga sonido. ${error.message}`);
+        })
+    ]);
+    const failedConversion = conversions.find((result) => result.status === 'rejected');
+    if (failedConversion?.status === 'rejected') throw failedConversion.reason;
+
+    const [webpBuffer, audioBuffer] = [
+        fs.readFileSync(stickerPath),
+        fs.readFileSync(audioPath)
+    ];
+    if (!webpBuffer.length || !audioBuffer.length) {
+        throw new Error('El video no contiene una pista de audio y video compatible.');
+    }
+
+    const upload = { upload: sock.waUploadToServer };
+    const [stickerContent, audioContent] = await Promise.all([
+        generateWAMessageContent({ sticker: webpBuffer }, upload),
+        prepareWAMessageMedia({
+            audio: audioBuffer,
+            mimetype: 'audio/ogg; codecs=opus',
+            ptt: true
+        }, upload)
+    ]);
+    const stickerMessage = stickerContent.stickerMessage as any;
+    const audioMessage = audioContent.audioMessage as any;
+    if (!stickerMessage || !audioMessage) {
+        throw new Error('Baileys no pudo preparar los archivos multimedia.');
+    }
+
+    delete audioMessage.ptt;
+    stickerMessage.isAnimated = true;
+    stickerMessage.premium = 0;
+    stickerMessage.emojis = '🔊';
+    stickerMessage.audioMessage = audioMessage;
+    await sock.relayMessage(msg.chat || msg.from, { stickerMessage }, {});
 }
 
 async function downloadBrat(text: string, endpoint: string): Promise<{ buffer: Buffer; ext: string; animated: boolean }> {
@@ -200,6 +321,11 @@ export default async function (sock: any, msg: any, extra: any) {
         const userName = msg.pushName || 'Usuario';
 
         const bratCommand = String(extra.command || '').toLowerCase();
+        if (['stickeraudio', 'sa', 'audiosticker'].includes(bratCommand)) {
+            await makeAudioSticker(sock, msg, files);
+            return;
+        }
+
         if (['brat', 'bratv', 'bratvideo', 'bratanime'].includes(bratCommand)) {
             const text = (typeof extra.rawArgs === 'string' ? extra.rawArgs : args.join(' ')).trim();
             if (!text) {

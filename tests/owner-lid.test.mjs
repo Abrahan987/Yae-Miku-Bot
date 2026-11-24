@@ -14,7 +14,11 @@ after(() => {
 });
 
 mock.module('@whiskeysockets/baileys', { namedExports: {
-    proto: {},
+    proto: { Message: {
+        StickerMessage: { encode: () => ({}) },
+        AudioMessage: { encode: () => ({}) },
+        encode: () => ({})
+    } },
     isJidGroup: jid => String(jid || '').endsWith('@g.us'),
     generateWAMessageFromContent: () => ({ key: { id: 'premium-menu' }, message: {} }),
     getContentType: message => Object.keys(message)[0],
@@ -22,6 +26,8 @@ mock.module('@whiskeysockets/baileys', { namedExports: {
         const [user, server] = jid.split('@');
         return { user: user.split(':')[0], server };
     },
+    generateWAMessageContent: async () => ({}),
+    prepareWAMessageMedia: async () => ({}),
     downloadContentFromMessage: async () => {}
 } });
 mock.module('../config.ts', { namedExports: {} });
@@ -511,4 +517,30 @@ test('brat commands encode text and generate static and animated stickers', asyn
                 } finally {
                     globalThis.fetch = originalFetch;
                 }
+});
+
+test('sticker plugin exposes audio aliases and requires a quoted video', async () => {
+    const { default: sticker, command } = await import('../src/plugins/sticker.ts');
+    const replies = [];
+    assert.ok(command.includes('stickeraudio'));
+    assert.ok(command.includes('sa'));
+    assert.ok(command.includes('audiosticker'));
+
+    await sticker({}, {
+        quoted: null,
+        reply: async text => replies.push(text)
+    }, { command: 'sa', args: [] });
+    assert.match(replies.at(-1), /Responde a un video con sonido/);
+
+    let downloaded = false;
+    await sticker({}, {
+        quoted: {
+            type: 'videoMessage',
+            msg: { seconds: 61 },
+            download: async () => { downloaded = true; }
+        },
+        reply: async text => replies.push(text)
+    }, { command: 'stickeraudio', args: [] });
+    assert.equal(downloaded, false);
+    assert.match(replies.at(-1), /60 segundos o menos/);
 });
