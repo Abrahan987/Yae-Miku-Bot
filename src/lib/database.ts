@@ -221,7 +221,12 @@ function absorbUser(from: string, to: string, lid: string): void {
 
 export function getUser(jid: string) {
     const id = resolveUserIdentity(jid);
-    const select = db.prepare('SELECT * FROM users WHERE jid = ?');
+    const select = db.prepare(`
+        SELECT jid, name, CAST(yen AS REAL) AS yen, banned,
+            CAST(bank AS REAL) AS bank, lid, premium_until
+        FROM users
+        WHERE jid = ?
+    `);
 
     if (id.lid && id.lid !== id.jid && select.get(id.lid)) {
         try { absorbUser(id.lid, id.jid, id.lid); } catch (error) { console.error('[USER MERGE]', id.lid, error); }
@@ -261,6 +266,21 @@ export function getUserBalance(jid: string) {
     return user;
 }
 
+type UserBalanceField = 'yen' | 'bank';
+
+export function adjustUserBalance(jid: string, field: UserBalanceField, delta: number): bigint {
+    if (!Number.isSafeInteger(delta)) throw new Error('El cambio del saldo debe ser un entero seguro.');
+
+    const user = getUserBalance(jid);
+    const current = BigInt(user[field] || 0);
+    const next = current + BigInt(delta);
+    const max = 9223372036854775807n;
+    if (next < 0n || next > max) throw new Error('El saldo resultante está fuera del rango permitido.');
+
+    db.prepare(`UPDATE users SET ${field} = ? WHERE jid = ?`).run(next, user.jid);
+    return next;
+}
+
 export function updateUser(
     jid: string,
     data: Partial<{
@@ -274,20 +294,15 @@ export function updateUser(
 ) {
     const user = getUser(jid);
     const updated = { ...user, ...data };
-
-    db.prepare(`
-        UPDATE users
-        SET name = ?, yen = ?, bank = ?, banned = ?, lid = ?, premium_until = ?
-        WHERE jid = ?
-    `).run(
-        updated.name || '',
-        updated.yen || 0,
-        updated.bank || 0,
-        updated.banned || 0,
-        updated.lid || '',
-        updated.premium_until || 0,
-        user.jid
-    );
+    const fields: (keyof typeof data)[] = ['name', 'yen', 'bank', 'banned', 'lid', 'premium_until'];
+    const changed = fields.filter((field) => data[field] !== undefined);
+    if (changed.length) {
+        db.prepare(`
+            UPDATE users
+            SET ${changed.map((field) => `${field} = ?`).join(', ')}
+            WHERE jid = ?
+        `).run(...changed.map((field) => data[field]), user.jid);
+    }
 
     return updated;
 }

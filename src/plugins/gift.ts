@@ -3,7 +3,7 @@ import {
     isJidGroup,
     generateWAMessageFromContent
 } from '@whiskeysockets/baileys';
-import { getUser, updateUser, getCooldown, setCooldown, getPremiumUntil, isPremiumUser, addPremium } from '../lib/database.ts';
+import { getUser, getUserBalance, adjustUserBalance, updateUser, getCooldown, setCooldown, getPremiumUntil, isPremiumUser, addPremium } from '../lib/database.ts';
 import { isOwner, deco, warn } from '../lib/perms.ts';
 
 export const command = ['gift', 'regalo', 'regalar', 'givecoins', 'pay', 'coinsgive', 'chetar', 'daryenes', 'premiun', 'premium', 'comprarprem'];
@@ -205,21 +205,11 @@ export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg
             if (!Number.isSafeInteger(amount) || amount < 1) {
                 return msg.reply(deco('𝙳𝙰𝚁𝙴𝙽𝙴𝚂', '🪷 Indica una cantidad válida mayor a cero.'));
             }
-            const recipientUser = getUser(recipient);
-            const newBalance = (recipientUser.yen || 0) + amount;
-            if (!Number.isSafeInteger(newBalance)) {
-                return msg.reply(deco('𝙳𝙰𝚁𝙴𝙽𝙴𝚂', '🪷 La cantidad excede el límite permitido.'));
-            }
-            updateUser(recipient, {
-                name: recipientUser.name,
-                yen: newBalance,
-                bank: recipientUser.bank,
-                banned: recipientUser.banned
-            });
+            const newBalance = adjustUserBalance(recipient, 'yen', amount);
             return sock.sendMessage(
                 msg.from,
                 {
-                    text: deco('𝙳𝙰𝚁𝙴𝙽𝙴𝚂', `🪷 Entregaste *¥${amount.toLocaleString()}* a @${recipient.split('@')[0]}.\n> Nuevo saldo: *¥${((recipientUser.yen || 0) + amount).toLocaleString()}*`),
+                    text: deco('𝙳𝙰𝚁𝙴𝙽𝙴𝚂', `🪷 Entregaste *¥${amount.toLocaleString()}* a @${recipient.split('@')[0]}.\n> Nuevo saldo: *¥${newBalance.toLocaleString()}*`),
                     mentions: [recipient]
                 },
                 { quoted: msg }

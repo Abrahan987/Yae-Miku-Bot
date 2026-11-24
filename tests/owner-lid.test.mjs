@@ -28,7 +28,11 @@ mock.module('@whiskeysockets/baileys', { namedExports: {
     },
     generateWAMessageContent: async () => ({}),
     prepareWAMessageMedia: async () => ({}),
-    downloadContentFromMessage: async () => {}
+    downloadContentFromMessage: async media => ({
+        async *[Symbol.asyncIterator]() {
+            if (media?.testBuffer) yield media.testBuffer;
+        }
+    })
 } });
 mock.module('../config.ts', { namedExports: {} });
 const commands = new Map();
@@ -161,6 +165,42 @@ test('owner can set its own yen and give yen, but other users cannot', async () 
     await gift(sock, otherMsg, { command: 'chetar', args: ['999'] }, {}, { key: { fromMe: false, remoteJid: '573003@s.whatsapp.net' } });
     assert.equal(getUser('573001@s.whatsapp.net').yen, 250000);
     assert.match(replies.at(-1).text, /owner.*bot|solo puede ser usado por el \*?owner/i);
+});
+
+test('daryenes adds yen exactly to a balance above Number.MAX_SAFE_INTEGER', async () => {
+    const { default: gift } = await import('../src/plugins/gift.ts');
+    const recipient = '573078@s.whatsapp.net';
+    const initial = 9214010099999982n;
+    const amount = 1235;
+    db.db.prepare('INSERT INTO users (jid, name, yen, bank) VALUES (?, ?, ?, 0)')
+        .run(recipient, 'Saldo grande', initial);
+    assert.doesNotThrow(() => db.getUser(recipient));
+    db.updateUser(recipient, { name: 'Saldo exacto' });
+    assert.equal(
+        db.db.prepare('SELECT CAST(yen AS TEXT) AS yen FROM users WHERE jid = ?').get(recipient).yen,
+        String(initial)
+    );
+
+    const replies = [];
+    const ownerMessage = {
+        from: '123@g.us',
+        sender: '573001@s.whatsapp.net',
+        isGroup: true,
+        mentionedJid: [recipient],
+        quoted: null,
+        reply: async text => replies.push({ text })
+    };
+    const sock = {
+        user: { id: '573001@s.whatsapp.net' },
+        sendMessage: async (_chat, content) => replies.push(content)
+    };
+    await gift(sock, ownerMessage, { command: 'daryenes', args: [`@${recipient.split('@')[0]}`, String(amount)] }, {}, {
+        key: { fromMe: true, remoteJid: ownerMessage.from }
+    });
+
+    const stored = db.db.prepare('SELECT CAST(yen AS TEXT) AS yen FROM users WHERE jid = ?').get(recipient);
+    assert.equal(stored.yen, String(initial + BigInt(amount)));
+    assert.match(replies.at(-1).text, new RegExp((initial + BigInt(amount)).toLocaleString()));
 });
 
 test('real serializer and LID cache authorize the owner, not another user', async () => {
@@ -514,6 +554,38 @@ test('brat commands encode text and generate static and animated stickers', asyn
                     const ordinary = new webp.default.Image();
                     await ordinary.load(sent.at(-1).sticker);
                     assert.equal(ordinary.hasAnim, false);
+
+                    const largeVideo = spawnSync('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=512x512:r=20:d=10',
+                        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '12', '-threads', '1',
+                        '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1'], { maxBuffer: 20 * 1024 * 1024 });
+                    assert.equal(largeVideo.status, 0, String(largeVideo.stderr));
+                    assert.ok(largeVideo.stdout.length > 1024 * 1024);
+                    const videoMsg = {
+                        ...msg,
+                        quoted: {
+                            type: 'videoMessage',
+                            msg: { mimetype: 'video/mp4', seconds: 10, testBuffer: largeVideo.stdout },
+                            download: async () => largeVideo.stdout
+                        }
+                    };
+                    await sticker(sock, videoMsg, { command: 's', args: [] });
+                    assert.equal(sent.length, 6);
+                    assert.ok(sent.at(-1).sticker.length < 1024 * 1024);
+
+                    const generatedSticker = sent.at(-1).sticker;
+                    const quotedStickerMsg = {
+                        ...msg,
+                        quoted: {
+                            type: 'stickerMessage',
+                            msg: { mimetype: 'image/webp', isAnimated: true, testBuffer: generatedSticker },
+                            download: async () => generatedSticker
+                        }
+                    };
+                    await sticker(sock, quotedStickerMsg, { command: 's', args: [] });
+                    assert.equal(sent.length, 7);
+                    const quotedResult = new webp.default.Image();
+                    await quotedResult.load(sent.at(-1).sticker);
+                    assert.equal(quotedResult.hasAnim, true);
                 } finally {
                     globalThis.fetch = originalFetch;
                 }

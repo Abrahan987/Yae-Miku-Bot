@@ -51,6 +51,7 @@ const effectArgs: Record<string, string> = {
 };
 
 const isUrl = (text: string) => /^https?:\/\/\S+$/i.test(text);
+const MAX_STICKER_BYTES = 900 * 1024;
 
 function installAudioStickerSupport(): void {
     const Message = proto.Message as any;
@@ -114,9 +115,9 @@ function helpText(prefix: string) {
     );
 }
 
-function buildFilters(shape: string | undefined, effects: string[]): string {
-    const W = 512;
-    const H = 512;
+function buildFilters(shape: string | undefined, effects: string[], size: number): string {
+    const W = size;
+    const H = size;
     const f: string[] = [];
 
     if (shape === 'cover') {
@@ -160,14 +161,6 @@ function buildFilters(shape: string | undefined, effects: string[]): string {
     return f.join(',');
 }
 
-function runFFmpeg(input: string, output: string, vf: string, animated: boolean): Promise<void> {
-    const args = animated
-        ? ['-y', '-i', input, '-t', '10', '-vf', `fps=15,${vf}`, '-an', '-c:v', 'libwebp', '-loop', '0', '-preset', 'default', '-q:v', '60', '-compression_level', '6', output]
-        : ['-y', '-i', input, '-vf', vf, '-an', '-frames:v', '1', '-c:v', 'libwebp', '-q:v', '80', output];
-
-    return runFFmpegArgs(args);
-}
-
 function runFFmpegArgs(args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
         const p = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -176,6 +169,48 @@ function runFFmpegArgs(args: string[]): Promise<void> {
         p.on('error', reject);
         p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err || `ffmpeg code ${code}`))));
     });
+}
+
+async function encodeWebp(input: string, output: string, filters: (size: number) => string, animated: boolean): Promise<Buffer> {
+    const settings: { size: number; fps?: number; quality: number }[] = animated
+        ? [
+            { size: 512, fps: 15, quality: 60 },
+            { size: 512, fps: 12, quality: 50 },
+            { size: 448, fps: 12, quality: 50 },
+            { size: 448, fps: 10, quality: 40 },
+            { size: 384, fps: 10, quality: 40 },
+            { size: 384, fps: 8, quality: 30 },
+            { size: 320, fps: 8, quality: 30 },
+            { size: 256, fps: 6, quality: 25 },
+            { size: 192, fps: 5, quality: 20 },
+            { size: 128, fps: 5, quality: 15 }
+        ]
+        : [
+            { size: 512, quality: 80 },
+            { size: 512, quality: 70 },
+            { size: 448, quality: 60 },
+            { size: 384, quality: 50 },
+            { size: 320, quality: 40 },
+            { size: 256, quality: 30 },
+            { size: 192, quality: 20 },
+            { size: 128, quality: 15 }
+        ];
+
+    for (const setting of settings) {
+        const args = [
+            '-y', '-i', input, '-map', '0:v:0',
+            ...(animated ? ['-t', '10'] : ['-frames:v', '1']),
+            '-vf', `${animated ? `fps=${setting.fps},` : ''}${filters(setting.size)}`,
+            '-an', '-c:v', 'libwebp',
+            ...(animated ? ['-loop', '0', '-preset', 'default'] : []),
+            '-q:v', String(setting.quality), '-compression_level', '6', output
+        ];
+        await runFFmpegArgs(args);
+        const result = fs.readFileSync(output);
+        if (result.length <= MAX_STICKER_BYTES) return result;
+    }
+
+    throw new Error('El sticker supera 900 KB incluso después de comprimirlo.');
 }
 
 async function addExif(buffer: Buffer, packname: string, author: string, emoji = '🪷'): Promise<Buffer> {
@@ -202,7 +237,46 @@ async function downloadQuoted(media: any, type: string): Promise<Buffer> {
     const stream = await downloadContentFromMessage(media, type as any);
     const chunks: Buffer[] = [];
     for await (const c of stream) chunks.push(c);
-    return Buffer.concat(chunks);
+    const buffer = Buffer.concat(chunks);
+    if (type !== 'sticker' || !buffer.length) return buffer;
+
+    const image = new (webp as any).Image();
+    await image.load(buffer);
+    return image.save(null, { exif: false, iccp: false, xmp: false });
+}
+
+async function normalizeAnimatedWebp(buffer: Buffer, stamp: string, files: string[]): Promise<string> {
+    const image = new (webp as any).Image();
+    await image.load(buffer);
+    if (!image.hasAnim || !Array.isArray(image.frames) || !image.frames.length) {
+        throw new Error('No pude leer los cuadros del sticker animado.');
+    }
+
+    const frameCount = Math.min(image.frames.length, 150);
+    const frameBuffers: Buffer[] = await image.demux({
+        buffers: true,
+        start: 0,
+        end: frameCount - 1
+    });
+    const sequence = path.join(tmpDir, `frame-${stamp}-%06d.webp`);
+    for (let i = 0; i < frameBuffers.length; i++) {
+        const framePath = path.join(tmpDir, `frame-${stamp}-${String(i).padStart(6, '0')}.webp`);
+        files.push(framePath);
+        fs.writeFileSync(framePath, frameBuffers[i]);
+    }
+
+    const delays = image.frames.slice(0, frameBuffers.length)
+        .map((frame: any) => Number(frame.delay) || 100);
+    const averageDelay = delays.reduce((sum: number, delay: number) => sum + delay, 0) / delays.length;
+    const fps = Math.max(5, Math.min(30, Math.round(1000 / averageDelay)));
+    const gifPath = path.join(tmpDir, `normalized-${stamp}.gif`);
+    files.push(gifPath);
+    await runFFmpegArgs([
+        '-y', '-framerate', String(fps), '-i', sequence, '-t', '10',
+        '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba',
+        '-loop', '0', gifPath
+    ]);
+    return gifPath;
 }
 
 async function makeAudioSticker(sock: any, msg: any, files: string[], packname: string, author: string): Promise<void> {
@@ -231,11 +305,9 @@ async function makeAudioSticker(sock: any, msg: any, files: string[], packname: 
     fs.writeFileSync(inputPath, source);
 
     const conversions = await Promise.allSettled([
-        runFFmpegArgs([
-            '-y', '-i', inputPath, '-map', '0:v:0', '-t', '10',
-            '-vf', 'fps=12,scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=yuva420p',
-            '-an', '-c:v', 'libwebp', '-loop', '0', '-preset', 'default', '-q:v', '55', stickerPath
-        ]),
+        encodeWebp(inputPath, stickerPath, (size) =>
+            `scale=${size}:${size}:force_original_aspect_ratio=decrease,pad=${size}:${size}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=yuva420p`,
+        true),
         runFFmpegArgs([
             '-y', '-i', inputPath, '-map', '0:a:0', '-t', '10', '-vn',
             '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '48k', '-f', 'ogg', audioPath
@@ -246,13 +318,11 @@ async function makeAudioSticker(sock: any, msg: any, files: string[], packname: 
     const failedConversion = conversions.find((result) => result.status === 'rejected');
     if (failedConversion?.status === 'rejected') throw failedConversion.reason;
 
-    const [rawWebpBuffer, audioBuffer] = [
-        fs.readFileSync(stickerPath),
-        fs.readFileSync(audioPath)
-    ];
-    if (!rawWebpBuffer.length || !audioBuffer.length) {
+    const audioBuffer = fs.readFileSync(audioPath);
+    if (!audioBuffer.length) {
         throw new Error('El video no contiene una pista de audio y video compatible.');
     }
+    const rawWebpBuffer = fs.readFileSync(stickerPath);
     const webpBuffer = await addExif(rawWebpBuffer, packname, author, '🔊');
 
     const upload = { upload: sock.waUploadToServer };
@@ -307,8 +377,11 @@ async function makeSticker(buffer: Buffer, ext: string, animated: boolean, shape
     const outputPath = path.join(tmpDir, `out-${stamp}.webp`);
     files.push(inputPath, outputPath);
     fs.writeFileSync(inputPath, buffer);
-    await runFFmpeg(inputPath, outputPath, buildFilters(shape, effects), animated);
-    return addExif(fs.readFileSync(outputPath), packname, author);
+    const conversionInput = ext === 'webp' && animated
+        ? await normalizeAnimatedWebp(buffer, stamp, files)
+        : inputPath;
+    const sticker = await encodeWebp(conversionInput, outputPath, (size) => buildFilters(shape, effects, size), animated);
+    return addExif(sticker, packname, author);
 }
 
 export default async function (sock: any, msg: any, extra: any) {
