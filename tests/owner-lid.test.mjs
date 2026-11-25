@@ -14,7 +14,25 @@ after(() => {
 });
 
 const generatedMedia = [];
+const subbotSockets = [];
+let failSubbotAuth = false;
+const makeSubbotSocket = () => {
+    const listeners = new Map();
+    const sock = {
+        user: { id: '573099@s.whatsapp.net' },
+        ev: {
+            on: (event, fn) => listeners.set(event, fn),
+            removeAllListeners: () => listeners.clear()
+        },
+        ws: { isOpen: true, close: () => {} },
+        end: () => {},
+        listeners
+    };
+    subbotSockets.push(sock);
+    return sock;
+};
 mock.module('@whiskeysockets/baileys', { namedExports: {
+    default: makeSubbotSocket,
     proto: { Message: {
         StickerMessage: { encode: () => ({}) },
         AudioMessage: { encode: () => ({}) },
@@ -27,6 +45,18 @@ mock.module('@whiskeysockets/baileys', { namedExports: {
         const [user, server] = jid.split('@');
         return { user: user.split(':')[0], server };
     },
+    useMultiFileAuthState: async () => {
+        if (failSubbotAuth) {
+            failSubbotAuth = false;
+            throw new Error('simulated auth-state failure');
+        }
+        return { state: { creds: { registered: false }, keys: {} }, saveCreds: async () => {} };
+    },
+    fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 1000000000] }),
+    makeCacheableSignalKeyStore: keys => keys,
+    makeWASocket: makeSubbotSocket,
+    DisconnectReason: { loggedOut: 401 },
+    Browsers: { macOS: browser => browser },
     generateWAMessageContent: async content => {
         generatedMedia.push(content);
         return { stickerMessage: {} };
@@ -205,6 +235,32 @@ test('daryenes adds yen exactly to a balance above Number.MAX_SAFE_INTEGER', asy
     const stored = db.db.prepare('SELECT CAST(yen AS TEXT) AS yen FROM users WHERE jid = ?').get(recipient);
     assert.equal(stored.yen, String(initial + BigInt(amount)));
     assert.match(replies.at(-1).text, new RegExp((initial + BigInt(amount)).toLocaleString()));
+});
+
+test('failed subbot startup releases its phone lock so linking can be retried', async () => {
+    const subbots = await import('../src/lib/subbot.ts');
+    const config = {
+        phone: '573099',
+        isCode: false,
+        mainSocket: { sendMessage: async () => ({ key: { id: 'sent' } }) },
+        mainChat: '573001@s.whatsapp.net',
+        mainMsg: { key: { id: 'request' } }
+    };
+
+    failSubbotAuth = true;
+    await assert.rejects(subbots.startSubBot(config), /simulated auth-state failure/);
+    await assert.doesNotReject(subbots.startSubBot(config));
+    await assert.rejects(subbots.startSubBot(config), /sub-bot activo o en proceso/);
+    await subbotSockets.at(-1).listeners.get('connection.update')({
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: 500 } } }
+    });
+    await assert.rejects(subbots.startSubBot(config), /sub-bot activo o en proceso/);
+    subbots.removeSubBot(config.phone);
+
+    await assert.doesNotReject(subbots.startSubBot(config));
+    subbots.removeSubBot(config.phone);
+    assert.ok(subbotSockets.length >= 2);
 });
 
 test('real serializer and LID cache authorize the owner, not another user', async () => {

@@ -30,6 +30,39 @@ const activeBots = new Map<string, any>();
 const connecting = new Set<string>();
 const retries = new Map<string, number>();
 const reconnectTimers = new Map<string, NodeJS.Timeout>();
+const sessionTokens = new Map<string, symbol>();
+const pendingBots = new Map<string, any>();
+const connectionTimers = new Map<string, NodeJS.Timeout>();
+const pairingTimers = new Map<string, NodeJS.Timeout>();
+
+function clearTimer(timers: Map<string, NodeJS.Timeout>, phone: string): void {
+    const timer = timers.get(phone);
+    if (!timer) return;
+    clearTimeout(timer);
+    timers.delete(phone);
+}
+
+function stopSession(phone: string, token?: symbol): void {
+    if (token && sessionTokens.get(phone) !== token) return;
+
+    clearTimer(reconnectTimers, phone);
+    clearTimer(connectionTimers, phone);
+    clearTimer(pairingTimers, phone);
+
+    const pending = pendingBots.get(phone);
+    const active = activeBots.get(phone);
+    pendingBots.delete(phone);
+    activeBots.delete(phone);
+    connecting.delete(phone);
+    retries.delete(phone);
+    sessionTokens.delete(phone);
+
+    for (const sock of new Set([pending, active].filter(Boolean))) {
+        try { sock.ev?.removeAllListeners(); } catch {}
+        try { sock.end?.(new Error('Sub-bot session stopped')); } catch {}
+        try { sock.ws?.close(); } catch {}
+    }
+}
 
 export function normalizePhone(input: string): string {
     let s = String(input).replace(/\D/g, '');
@@ -66,21 +99,39 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
     const phone = normalizePhone(config.phone);
 
     if (!phone) throw new Error('No se pudo obtener tu número.');
+    const active = activeBots.get(phone);
+    if (active && active.ws?.isOpen === false) {
+        stopSession(phone);
+    }
     if (activeBots.has(phone) || connecting.has(phone)) {
         throw new Error('Ya tienes un sub-bot activo o en proceso de vinculación.');
     }
 
+    const token = Symbol(phone);
+    sessionTokens.set(phone, token);
     connecting.add(phone);
 
     const sessionPath = path.join(subsDir, phone);
-    fs.mkdirSync(sessionPath, { recursive: true });
 
     const sentKeys: any[] = [];
     let pairingSent = false;
+    const ensureCurrent = () => sessionTokens.get(phone) === token;
+    const failSession = (error: unknown) => {
+        if (!ensureCurrent()) return;
+        console.error(`[SUBBOT ${phone} CONNECTION ERROR]`, error);
+        stopSession(phone, token);
+        mainSocket.sendMessage(
+            mainChat,
+            { text: '⚠️ La conexión del sub-bot falló. Ejecuta el comando de vinculación nuevamente.' },
+            { quoted: mainMsg }
+        ).catch(() => {});
+    };
 
     const connect = async (): Promise<void> => {
+        if (!ensureCurrent()) return;
         const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
         const version = await getVersion();
+        if (!ensureCurrent()) return;
 
         const sock: any = makeWASocket({
             version,
@@ -97,22 +148,24 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
             generateHighQualityLinkPreview: false,
             getMessage: async () => undefined
         });
-        sock.subbotPhone = phone;
-
-        sock.ev.on('creds.update', saveCreds);
-
-        try {
-            await handler(sock);
-        } catch (e) {
-            console.error(`[SUBBOT ${phone} HANDLER ERROR]`, e);
-            mainSocket.sendMessage(mainChat, { text: `⚠️ Error al conectar handler del sub-bot: ${e}` }, { quoted: mainMsg }).catch(() => {});
+        if (!ensureCurrent()) {
+            try { sock.end?.(new Error('Stale sub-bot connection')); } catch {}
+            try { sock.ws?.close(); } catch {}
+            return;
         }
+        pendingBots.set(phone, sock);
+        sock.subbotPhone = phone;
+        sock.ev.on('creds.update', saveCreds);
+        await handler(sock);
 
         if (isCode && !state.creds.registered && !pairingSent) {
             pairingSent = true;
-            setTimeout(async () => {
+            const timer = setTimeout(async () => {
+                pairingTimers.delete(phone);
+                if (!ensureCurrent() || pendingBots.get(phone) !== sock) return;
                 try {
                     const raw: string = await sock.requestPairingCode(phone);
+                    if (!ensureCurrent()) return;
                     const code = raw?.match(/.{1,4}/g)?.join('-') || raw;
 
                     const info = await mainSocket.sendMessage(
@@ -135,16 +188,22 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
                     sentKeys.push(info?.key, codeMsg?.key);
                     deleteLater(mainSocket, mainChat, info?.key);
                     deleteLater(mainSocket, mainChat, codeMsg?.key);
-                } catch (e) {
-                    console.error('[SUBBOT CODE ERROR]', e);
-                    connecting.delete(phone);
-                    try { sock.end?.(new Error('code failed')); } catch {}
-                    mainSocket.sendMessage(mainChat, { text: '⚠️ No se pudo generar el código. Intenta de nuevo.' }, { quoted: mainMsg }).catch(() => {});
+                } catch (error) {
+                    console.error('[SUBBOT CODE ERROR]', error);
+                    if (!ensureCurrent()) return;
+                    stopSession(phone, token);
+                    mainSocket.sendMessage(
+                        mainChat,
+                        { text: '⚠️ No se pudo generar el código. Intenta de nuevo.' },
+                        { quoted: mainMsg }
+                    ).catch(() => {});
                 }
             }, 3000);
+            pairingTimers.set(phone, timer);
         }
 
         sock.ev.on('connection.update', async (update: any) => {
+            if (!ensureCurrent() || (pendingBots.get(phone) !== sock && activeBots.get(phone) !== sock)) return;
             const { connection, lastDisconnect, qr } = update;
 
             if (qr && !isCode) {
@@ -170,13 +229,12 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
             }
 
             if (connection === 'open') {
-                const pending = reconnectTimers.get(phone);
-                if (pending) {
-                    clearTimeout(pending);
-                    reconnectTimers.delete(phone);
-                }
+                clearTimer(reconnectTimers, phone);
+                clearTimer(connectionTimers, phone);
+                clearTimer(pairingTimers, phone);
                 connecting.delete(phone);
                 retries.delete(phone);
+                pendingBots.delete(phone);
                 activeBots.set(phone, sock);
                 console.log(`[SUB-BOT] Conectado: ${cleanJid(sock.user?.id)}`);
 
@@ -201,19 +259,22 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
 
             if (connection === 'close') {
                 const code = (lastDisconnect?.error as any)?.output?.statusCode;
-                activeBots.delete(phone);
+                if (activeBots.get(phone) === sock) activeBots.delete(phone);
+                if (pendingBots.get(phone) === sock) pendingBots.delete(phone);
+                clearTimer(connectionTimers, phone);
+                clearTimer(pairingTimers, phone);
 
                 if (code === DisconnectReason.loggedOut) {
-                    connecting.delete(phone);
+                    stopSession(phone, token);
                     try { fs.rmSync(sessionPath, { recursive: true, force: true }); } catch {}
                     return;
                 }
 
+                connecting.add(phone);
                 const n = (retries.get(phone) || 0) + 1;
                 retries.set(phone, n);
                 if (n > 8) {
-                    connecting.delete(phone);
-                    retries.delete(phone);
+                    stopSession(phone, token);
                     return;
                 }
                 if (reconnectTimers.has(phone)) return;
@@ -221,14 +282,31 @@ export async function startSubBot(config: SubBotConfig): Promise<void> {
                 try { sock.ws?.close(); } catch {}
                 const timer = setTimeout(() => {
                     reconnectTimers.delete(phone);
-                    connect().catch((e) => console.error('[SUBBOT RECONNECT]', e));
+                    connect().catch(failSession);
                 }, 2000);
                 reconnectTimers.set(phone, timer);
             }
         });
+
+        const timeout = setTimeout(() => {
+            if (!ensureCurrent() || activeBots.has(phone)) return;
+            mainSocket.sendMessage(
+                mainChat,
+                { text: '⌛ Se agotó el tiempo para vincular el sub-bot. Vuelve a ejecutar el comando.' },
+                { quoted: mainMsg }
+            ).catch(() => {});
+            stopSession(phone, token);
+        }, 120000);
+        connectionTimers.set(phone, timeout);
     };
 
-    await connect();
+    try {
+        fs.mkdirSync(sessionPath, { recursive: true });
+        await connect();
+    } catch (error) {
+        stopSession(phone, token);
+        throw error;
+    }
 }
 
 export async function restoreSubBots(mainSocket: any): Promise<void> {
@@ -263,15 +341,5 @@ export function listActiveBots(): string[] {
 
 export function removeSubBot(phone: string) {
     const p = normalizePhone(phone);
-    const timer = reconnectTimers.get(p);
-    if (timer) {
-        clearTimeout(timer);
-        reconnectTimers.delete(p);
-    }
-    const bot = activeBots.get(p);
-    if (bot) {
-        try { bot.ev.removeAllListeners(); bot.ws?.close(); } catch {}
-    }
-    activeBots.delete(p);
-    connecting.delete(p);
+    stopSession(p);
 }
