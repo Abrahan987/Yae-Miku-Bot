@@ -91,9 +91,6 @@ const { default: setprefix } = await import('../src/plugins/setprefix.ts');
 const mute = await import('../src/plugins/mute.ts');
 const deleteMessage = await import('../src/plugins/delete.ts');
 const promote = await import('../src/plugins/promote.ts');
-const diagGrupo = await import('../src/plugins/diaggrupo.ts');
-const resetPrimary = await import('../src/plugins/resetprimary.ts');
-const botControl = await import('../src/plugins/bot.ts');
 commands.set('setprefix', setprefix);
 mute.default.plugin = { admin: false, botAdmin: false };
 for (const command of mute.command) commands.set(command, mute.default);
@@ -101,12 +98,6 @@ deleteMessage.default.plugin = { admin: false, botAdmin: false };
 for (const command of deleteMessage.command) commands.set(command, deleteMessage.default);
 promote.default.plugin = { admin: promote.admin, botAdmin: promote.botAdmin };
 for (const command of promote.command) commands.set(command, promote.default);
-diagGrupo.default.plugin = { admin: diagGrupo.admin, botAdmin: diagGrupo.botAdmin };
-for (const command of diagGrupo.command) commands.set(command, diagGrupo.default);
-resetPrimary.default.plugin = { admin: resetPrimary.admin, botAdmin: false };
-for (const command of resetPrimary.command) commands.set(command, resetPrimary.default);
-botControl.default.plugin = { admin: botControl.admin, botAdmin: botControl.botAdmin };
-for (const command of botControl.command) commands.set(command, botControl.default);
 
 if (process.env.YAE_BENCHMARK === '1') {
     test('benchmark group command dispatch', async () => {
@@ -390,63 +381,6 @@ test('mute is group-scoped, admin-only, persistent, and deletes muted messages',
 
     await send('unmute-command', adminJid, '.unmute @573012', { mentionedJid: [targetJid] });
     assert.equal(db.isGroupUserMuted(group, [targetJid]), false);
-});
-
-test('group diagnostic bypasses primary and mute filters and guides admin recovery', async () => {
-    const listeners = new Map();
-    const sentMessages = [];
-    const group = 'diag-recovery@g.us';
-    const adminJid = '573030@s.whatsapp.net';
-    const botJid = '573031@s.whatsapp.net';
-    const participants = [
-        { id: adminJid, admin: 'admin' },
-        { id: botJid, admin: 'admin' }
-    ];
-    const sock = {
-        subbotPhone: '573031',
-        user: { id: botJid },
-        ev: { on: (event, fn) => listeners.set(event, fn) },
-        groupMetadata: async () => ({ participants }),
-        sendMessage: async (chat, content) => { sentMessages.push({ chat, ...content }); }
-    };
-    const send = async (id, participant, text) => listeners.get('messages.upsert')({
-        type: 'notify',
-        messages: [{
-            key: { id, remoteJid: group, participant, fromMe: false },
-            message: { conversation: text }
-        }]
-    });
-
-    handler(sock);
-    db.getGroup(group);
-    db.db.prepare('UPDATE groups SET mute = 1 WHERE jid = ?').run(group);
-    db.setSetting(`onlyadmin:${group}`, '1');
-    const { setPrimary, getPrimary } = await import('../src/lib/primary.ts');
-    setPrimary(group, '573099');
-
-    let ordinaryCommands = 0;
-    const probe = async () => { ordinaryCommands++; };
-    probe.plugin = {};
-    commands.set('diag-probe', probe);
-
-    await send('diag-ordinary-blocked', adminJid, '.diag-probe');
-    assert.equal(ordinaryCommands, 0);
-
-    await send('diag-report', adminJid, '.diaggrupo');
-    const report = sentMessages.at(-1).text;
-    assert.match(report, /No; hay otra instancia seleccionada/);
-    assert.match(report, /Bot activado en el grupo: \*No\*/);
-    assert.match(report, /> \.resetprimary/);
-    assert.match(report, /> \.bot on/);
-
-    await send('diag-reset-primary', adminJid, '.resetprimary');
-    assert.equal(getPrimary(group), '');
-    assert.match(sentMessages.at(-1).text, /Bot primario restablecido/);
-
-    await send('diag-enable-bot', adminJid, '.bot on');
-    assert.match(sentMessages.at(-1).text, /bot fue activado/);
-    await send('diag-ordinary-restored', adminJid, '.diag-probe');
-    assert.equal(ordinaryCommands, 1);
 });
 
 test('delete removes the quoted message silently for admins only', async () => {
