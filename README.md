@@ -32,6 +32,7 @@ Yae Miku es un bot de WhatsApp hecho sobre Baileys, sin frameworks encima y con 
 | **Plugins en caliente** | Cada archivo de `src/plugins/` es un comando. Se recargan al guardar. |
 | **Sub-bots** | Cualquiera puede vincular su propio número con `.qr` o `.code`. Comparten plugins y base de datos, cada uno con su sesión. |
 | **Bot primario por grupo** | Si hay varios bots en un grupo, `.setprimary` decide cuál responde. Los demás se quedan callados. |
+| **Diagnóstico de grupo** | `.diaggrupo` muestra bloqueos comunes; administradores pueden recuperar la respuesta con `.resetprimary` o `.bot on`. |
 | **Resolución LID ↔ número** | Los permisos, warns y estadísticas funcionan aunque WhatsApp entregue el usuario como `@lid`. |
 | **Moderación** | Warns con límite configurable, antilink, kick, promote, demote, hidetag y tagall. |
 | **Economía** | Yenes, trabajo, apuestas, robos, banco, matrimonios y ranking. |
@@ -193,6 +194,8 @@ Prefijos por defecto: `.` y `#`. Con `.menu` el bot muestra la lista completa.
 | `setgpname` · `setgpdesc` · `setgpbanner` | Edita el grupo |
 | `autoadmin` | El owner obtiene administrador si el bot es administrador |
 | `setprimary` · `resetprimary` | Bot primario del grupo |
+| `diaggrupo` · `diagnosticogrupo` | Diagnostica por qué el bot puede no responder en el grupo |
+| `bot on` · `bot off` | Activa o desactiva el bot en el grupo |
 | `topcount` · `topinactive` · `count` | Actividad de los miembros |
 
 </details>
