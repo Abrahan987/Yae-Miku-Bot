@@ -18,6 +18,13 @@ const DUP_LIMIT = 2000;
 const metaTtlMs = 300000;
 const processedIdsSet = new Set<string>();
 const processedIdsQueue: string[] = [];
+const GROUP_RECOVERY_COMMANDS = new Set([
+    'diaggrupo',
+    'diagnosticogrupo',
+    'resetprimary',
+    'clearprimary',
+    'fixprimary'
+]);
 const socketIds = new WeakMap<object, number>();
 let nextSocketId = 0;
 const groupMetaCache = new LRUCache<string, { metadata: any; ts: number }>({ max: 500, ttl: metaTtlMs });
@@ -47,6 +54,24 @@ function isDuplicate(key: string): boolean {
         if (oldest) processedIdsSet.delete(oldest);
     }
     return false;
+}
+
+function getRawMessageText(message: any): string {
+    let content = message;
+    for (const wrapper of ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension']) {
+        if (content?.[wrapper]?.message) content = content[wrapper].message;
+    }
+    return String(
+        content?.conversation ||
+        content?.extendedTextMessage?.text ||
+        content?.imageMessage?.caption ||
+        content?.videoMessage?.caption ||
+        content?.documentMessage?.caption ||
+        content?.buttonsResponseMessage?.selectedButtonId ||
+        content?.templateButtonReplyMessage?.selectedId ||
+        content?.listResponseMessage?.singleSelectReply?.selectedRowId ||
+        ''
+    );
 }
 
 const countedIds = new Set<string>();
@@ -383,15 +408,18 @@ export function handler(sock: WASocket) {
                 const msgId = rawMsg?.key?.id;
                 const jid = rawMsg?.key?.remoteJid || '';
                 if (!msgId || !rawMsg.message || !jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) continue;
+                const rawParsed = extractCommandInfo(getRawMessageText(rawMsg.message).trim());
+                const isGroupRecoveryCommand = jid.endsWith('@g.us') &&
+                    Boolean(rawParsed && GROUP_RECOVERY_COMMANDS.has(rawParsed.cleanCmd));
                 if (jid.endsWith('@g.us')) {
                     const primary = getPrimary(jid);
-                    if (primary && !isPrimaryBot(sock, primary)) continue;
+                    if (primary && !isPrimaryBot(sock, primary) && !isGroupRecoveryCommand) continue;
                 }
                 if (isDuplicate(`${socketId(sock)}:${msgId}`)) continue;
 
                 await learnSenderIdentity(sock, rawMsg);
                 const msg = serialize(sock, rawMsg);
-                if (msg?.isGroup && !rawMsg.key.fromMe) {
+                if (msg?.isGroup && !rawMsg.key.fromMe && !isGroupRecoveryCommand) {
                     try {
                         const senderIds = [
                             msg.sender,
@@ -437,7 +465,7 @@ export function handler(sock: WASocket) {
                 const runFn: any = commandMap.get(cleanCmd) || commandMap.get(`${usedPrefix}${cleanCmd}`);
                 if (!runFn) continue;
 
-                if (msg.isGroup && cleanCmd !== 'bot') {
+                if (msg.isGroup && cleanCmd !== 'bot' && !isGroupRecoveryCommand) {
                     let muted = false;
                     try { muted = Number(getGroup(msg.from).mute) === 1; } catch {}
                     if (muted) continue;
@@ -490,7 +518,7 @@ export function handler(sock: WASocket) {
                 const owner = isOwnerPerm(sock, msg, rawMsg);
 
                 if (msg.isGroup && !owner && !isAdmin) {
-                    if (adminOnly) continue;
+                    if (adminOnly && !isGroupRecoveryCommand) continue;
                 }
 
                 if (reqOwner && !owner) {
