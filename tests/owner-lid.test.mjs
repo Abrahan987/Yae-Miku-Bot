@@ -13,6 +13,7 @@ after(() => {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
 });
 
+const generatedMedia = [];
 mock.module('@whiskeysockets/baileys', { namedExports: {
     proto: { Message: {
         StickerMessage: { encode: () => ({}) },
@@ -26,8 +27,11 @@ mock.module('@whiskeysockets/baileys', { namedExports: {
         const [user, server] = jid.split('@');
         return { user: user.split(':')[0], server };
     },
-    generateWAMessageContent: async () => ({}),
-    prepareWAMessageMedia: async () => ({}),
+    generateWAMessageContent: async content => {
+        generatedMedia.push(content);
+        return { stickerMessage: {} };
+    },
+    prepareWAMessageMedia: async () => ({ audioMessage: { ptt: true, url: 'https://example.test/audio' } }),
     downloadContentFromMessage: async media => ({
         async *[Symbol.asyncIterator]() {
             if (media?.testBuffer) yield media.testBuffer;
@@ -615,4 +619,50 @@ test('sticker plugin exposes audio aliases and requires a quoted video', async (
     }, { command: 'stickeraudio', args: [] });
     assert.equal(downloaded, false);
     assert.match(replies.at(-1), /60 segundos o menos/);
+});
+
+test('audio sticker replies to its source video and uses faster animation settings', async () => {
+    const { default: sticker } = await import('../src/plugins/sticker.ts');
+    const webp = await import('node-webpmux');
+    const video = spawnSync('ffmpeg', [
+        '-loglevel', 'error',
+        '-f', 'lavfi', '-i', 'testsrc2=s=320x320:r=10:d=2',
+        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1',
+        '-c:a', 'aac', '-shortest', '-movflags', 'frag_keyframe+empty_moov',
+        '-f', 'mp4', 'pipe:1'
+    ], { maxBuffer: 20 * 1024 * 1024 });
+    assert.equal(video.status, 0, String(video.stderr));
+
+    const relayed = [];
+    const replies = [];
+    const sourceChat = 'audio-sticker@g.us';
+    await sticker({
+        waUploadToServer: async () => {},
+        relayMessage: async (chat, content, options) => relayed.push({ chat, content, options })
+    }, {
+        from: sourceChat,
+        chat: sourceChat,
+        pushName: 'Prueba',
+        quoted: {
+            type: 'videoMessage',
+            msg: { seconds: 2 },
+            key: { id: 'source-video', participant: '573001@s.whatsapp.net' },
+            sender: '573001@s.whatsapp.net',
+            download: async () => video.stdout
+        },
+        reply: async text => replies.push(text)
+    }, { command: 'sa', args: [] });
+
+    assert.equal(relayed.length, 1);
+    assert.equal(relayed[0].chat, sourceChat);
+    assert.equal(relayed[0].content.stickerMessage.contextInfo.stanzaId, 'source-video');
+    assert.equal(relayed[0].content.stickerMessage.contextInfo.participant, '573001@s.whatsapp.net');
+    assert.ok(relayed[0].content.stickerMessage.audioMessage);
+    assert.equal(relayed[0].content.stickerMessage.isAnimated, true);
+    assert.equal(replies.length, 0);
+
+    const encoded = new webp.default.Image();
+    await encoded.load(generatedMedia.at(-1).sticker);
+    assert.ok(encoded.exif);
 });

@@ -171,9 +171,17 @@ function runFFmpegArgs(args: string[]): Promise<void> {
     });
 }
 
-async function encodeWebp(input: string, output: string, filters: (size: number) => string, animated: boolean): Promise<Buffer> {
+async function encodeWebp(input: string, output: string, filters: (size: number) => string, animated: boolean, fast = false): Promise<Buffer> {
     const settings: { size: number; fps?: number; quality: number }[] = animated
+        ? (fast
         ? [
+            { size: 384, fps: 10, quality: 45 },
+            { size: 320, fps: 8, quality: 35 },
+            { size: 256, fps: 6, quality: 25 },
+            { size: 192, fps: 5, quality: 20 },
+            { size: 128, fps: 5, quality: 15 }
+        ]
+        : [
             { size: 512, fps: 15, quality: 60 },
             { size: 512, fps: 12, quality: 50 },
             { size: 448, fps: 12, quality: 50 },
@@ -184,7 +192,7 @@ async function encodeWebp(input: string, output: string, filters: (size: number)
             { size: 256, fps: 6, quality: 25 },
             { size: 192, fps: 5, quality: 20 },
             { size: 128, fps: 5, quality: 15 }
-        ]
+        ])
         : [
             { size: 512, quality: 80 },
             { size: 512, quality: 70 },
@@ -307,6 +315,7 @@ async function makeAudioSticker(sock: any, msg: any, files: string[], packname: 
     const conversions = await Promise.allSettled([
         encodeWebp(inputPath, stickerPath, (size) =>
             `scale=${size}:${size}:force_original_aspect_ratio=decrease,pad=${size}:${size}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=yuva420p`,
+        true,
         true),
         runFFmpegArgs([
             '-y', '-i', inputPath, '-map', '0:a:0', '-t', '10', '-vn',
@@ -345,6 +354,11 @@ async function makeAudioSticker(sock: any, msg: any, files: string[], packname: 
     stickerMessage.premium = 0;
     stickerMessage.emojis = '🔊';
     stickerMessage.audioMessage = audioMessage;
+    stickerMessage.contextInfo = {
+        stanzaId: quoted.key?.id,
+        participant: quoted.key?.participant || quoted.sender,
+        remoteJid: msg.from || msg.chat
+    };
     await sock.relayMessage(msg.chat || msg.from, { stickerMessage }, {});
 }
 
