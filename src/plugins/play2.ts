@@ -1,5 +1,6 @@
 import ytsearch from 'yt-search';
 import axios from 'axios';
+import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 
 export const command = ['play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'];
@@ -7,13 +8,22 @@ export const category = 'descargas';
 export const description = 'Busca y descarga videos de YouTube en formato MP4.';
 
 const VIDEO_FORMAT = 'auto';
+const MAX_VIDEO = 64 * 1024 * 1024;
 
 const DEFAULT_AGENT =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 const processing = new Set<string>();
 
-class StellarUnavailable extends Error {}
+interface StellarVideo {
+    title?: string;
+    author?: string;
+    duration?: string;
+    date?: string;
+    thumbnail?: string;
+    quality?: string;
+    dl: string;
+class Play2Error extends Error {}
 
 // Retry-After puede ser una cantidad de segundos o una fecha HTTP.
 function retryAfterMs(value: unknown): number | undefined {
@@ -25,14 +35,33 @@ function retryAfterMs(value: unknown): number | undefined {
     if (Number.isFinite(date)) return Math.max(0, date - Date.now());
 }
 
-interface StellarVideo {
-    title?: string;
-    author?: string;
-    duration?: string;
-    date?: string;
-    thumbnail?: string;
-    quality?: string;
-    dl: string;
+type StellarVideo = { title?: string } & ({ dl: string } | { source: Readable });
+
+async function* limitBytes(source: Readable, limit: number, errorText: string) {
+    let bytes = 0;
+    for await (const chunk of source) {
+        const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        bytes += data.length;
+        if (bytes > limit) throw new Play2Error(errorText);
+        yield data;
+    }
+    if (!bytes) throw new Play2Error('StellarWA devolvió una respuesta vacía.');
+}
+
+function readStellarVideo(body: any): StellarVideo | null {
+    if (!body || body.status === false || body.success === false) return null;
+    const item = body.data ?? body.result ?? body;
+    const links = typeof item === 'string' ? [item]
+        : [item?.dl, item?.download, item?.downloadUrl, item?.download_url, item?.url, body.dl];
+
+    for (const value of links) {
+        if (typeof value !== 'string' || !URL.canParse(value)) continue;
+        const url = new URL(value);
+        if (url.protocol !== 'https:' || url.username || url.password) continue;
+        if (/(^|\.)(youtu\.be|youtube\.com)$/i.test(url.hostname)) continue;
+        return { dl: value, title: typeof item?.title === 'string' ? item.title : undefined };
+    }
+    return null;
 }
 
 const cleanTitle = (title: string): string => {
@@ -75,6 +104,8 @@ const fetchVideoInfo = async (
 
             const { data } = await axios.get(
                 'https://api.stellarwa.xyz/dl/ytmp4v3',
+            const response = await axios.get<Readable>(
+                'https://api.stellarwa.xyz/dl/ytmp4',
                 {
                     params: {
                         url: cleanUrl,
@@ -83,9 +114,12 @@ const fetchVideoInfo = async (
                     },
                     timeout: 60000,
                     maxContentLength: 512 * 1024,
+                    responseType: 'stream',
+                    signal: AbortSignal.timeout(180_000),
                     headers: {
                         'User-Agent': DEFAULT_AGENT,
                         'Accept': 'application/json, text/plain, */*'
+                        'Accept': 'video/mp4, application/json, */*'
                     }
                 }
             );
@@ -95,13 +129,35 @@ const fetchVideoInfo = async (
 
                 if (url.protocol === 'https:' && !url.username && !url.password) {
                     return data.data as StellarVideo;
+            const source = response.data;
+            const type = String(response.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+            if (type === 'video/mp4' || type === 'application/octet-stream') {
+                if (Number(response.headers['content-length']) > MAX_VIDEO) {
+                    source.destroy();
+                    throw new Play2Error('El video supera los 64 MiB.');
                 }
+                // El cuerpo puede cerrarse mientras se completa la vista previa.
+                source.on('error', () => {});
+                return { source };
             }
+
+            const chunks: Buffer[] = [];
+            for await (const chunk of limitBytes(source, 512 * 1024, 'La respuesta de StellarWA es demasiado grande.')) {
+                chunks.push(chunk);
+            }
+            const body = Buffer.concat(chunks).toString('utf8');
+            let json;
+            try { json = JSON.parse(body); }
+            catch { throw new Play2Error('StellarWA devolvió una respuesta que no se puede usar como video.'); }
+            const video = readStellarVideo(json);
+            if (video) return video;
 
             console.log('[PLAY2] StellarWA sin descarga válida.');
             return null;
 
         } catch (error: any) {
+            if (error instanceof Play2Error) throw error;
+            error?.response?.data?.destroy?.();
             const status = error?.response?.status;
             console.log(
                 `[PLAY2] Falló StellarWA (intento ${attempt}):`,
@@ -115,7 +171,7 @@ const fetchVideoInfo = async (
                     const hint = advised && Number.isFinite(advised)
                         ? `Vuelve a intentarlo en ${Math.ceil(advised / 1000)} s.`
                         : 'Vuelve a intentarlo más tarde.';
-                    throw new StellarUnavailable(`StellarWA no está disponible por el momento (503). ${hint}`);
+                    throw new Play2Error(`StellarWA no está disponible por el momento (503). ${hint}`);
                 }
                 console.log(`[PLAY2] Reintento de StellarWA en ${wait} ms.`);
                 await delay(wait);
@@ -279,7 +335,7 @@ export default async function (
         } catch (error) {
             finished = true;
             thumbAbort.abort();
-            if (error instanceof StellarUnavailable) return msg.reply('🍥 ' + error.message);
+            if (error instanceof Play2Error) return msg.reply('🍥 ' + error.message);
             throw error;
         }
 
@@ -300,6 +356,21 @@ export default async function (
             : quickTitle;
 
         const fileName = `${cleanTitle(title)}.mp4`;
+
+        if ('source' in info) {
+            const stream = Readable.from(limitBytes(info.source, MAX_VIDEO, 'El video supera los 64 MiB.'), {
+                objectMode: false
+            });
+            try {
+                await sock.sendMessage(msg.from, {
+                    video: { stream }, jpegThumbnail, mimetype: 'video/mp4', fileName, caption: title
+                }, { quoted: msg, mediaUploadTimeoutMs: 90_000 });
+                return;
+            } finally {
+                stream.destroy();
+                info.source.destroy();
+            }
+        }
 
         // Primer método: envío directo mediante URL.
         try {
@@ -351,6 +422,7 @@ export default async function (
         );
 
     } catch (error: any) {
+        if (error instanceof Play2Error) return msg.reply('🍥 ' + error.message);
         console.error('[PLAY2]', error?.code || 'ERROR');
 
         await msg.reply(
