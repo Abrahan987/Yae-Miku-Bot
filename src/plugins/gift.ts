@@ -1,8 +1,4 @@
-import {
-    proto,
-    isJidGroup,
-    generateWAMessageFromContent
-} from '@whiskeysockets/baileys';
+import { sendInteractiveList } from '../lib/interactive.ts';
 import { getUser, getUserBalance, adjustUserBalance, updateUser, getCooldown, setCooldown, getPremiumUntil, isPremiumUser, addPremium } from '../lib/database.ts';
 import { isOwner, deco, warn } from '../lib/perms.ts';
 
@@ -55,87 +51,29 @@ async function sendPremiumMenu(sock: any, msg: any) {
         : '.';
 
     const rows = PREMIUM_PLANS.map(plan => ({
-        header: 'PREMIUM',
         title: plan.title,
         description: `¥${plan.price.toLocaleString()} - ${formatDuration(plan.duration)}`,
         id: `${prefix}comprarprem ${plan.id}`
     }));
 
-    const interactiveMessage = proto.Message.InteractiveMessage.create({
-        header: proto.Message.InteractiveMessage.Header.create({
+    return sendInteractiveList(
+        sock,
+        remoteJid,
+        {
             title: 'TIENDA PREMIUM YAE',
-            hasMediaAttachment: false
-        }),
-        body: proto.Message.InteractiveMessage.Body.create({
-            text: '🍓 Elige un plan. Premium elimina los cooldowns de economía, RPG y gacha mientras esté activo.'
-        }),
-        footer: proto.Message.InteractiveMessage.Footer.create({
-            text: 'Pago exclusivo con yenes'
-        }),
-        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-            messageVersion: 1,
-            messageParamsJson: '{}',
-            buttons: [{
-                name: 'single_select',
-                buttonParamsJson: JSON.stringify({
-                    title: 'Comprar Premium',
-                    sections: [{
-                        title: 'PLANES PREMIUM',
-                        rows
-                    }]
-                })
+            description: '🍓 Elige un plan. Premium elimina los cooldowns de economía, RPG y gacha mientras esté activo.',
+            footer: 'Pago exclusivo con yenes',
+            buttonText: 'Comprar Premium',
+            contextInfo: {
+                forwardingScore: 1,
+                isForwarded: true
+            },
+            sections: [{
+                title: 'PLANES PREMIUM',
+                rows
             }]
-        }),
-        contextInfo: {
-            forwardingScore: 1,
-            isForwarded: true
-        }
-    });
-
-    const message = generateWAMessageFromContent(
-        remoteJid,
-        {
-            viewOnceMessage: {
-                message: {
-                    messageContextInfo: {
-                        deviceListMetadata: {},
-                        deviceListMetadataVersion: 2
-                    },
-                    interactiveMessage
-                }
-            }
         },
-        {
-            userJid: sock.user?.id || '',
-            quoted: msg
-        }
-    );
-
-    if (!message.message || !message.key.id) {
-        throw new Error('No se pudo generar el menú Premium.');
-    }
-
-    const additionalNodes: any[] = [{
-        tag: 'biz',
-        attrs: {},
-        content: [{
-            tag: 'interactive',
-            attrs: { type: 'native_flow', v: '1' },
-            content: [{ tag: 'native_flow', attrs: { name: 'mixed', v: '9' } }]
-        }]
-    }];
-
-    if (!isJidGroup(remoteJid)) {
-        additionalNodes.unshift({ tag: 'bot', attrs: { biz_bot: '1' } });
-    }
-
-    return sock.relayMessage(
-        remoteJid,
-        message.message,
-        {
-            messageId: message.key.id,
-            additionalNodes
-        }
+        msg
     );
 }
 
