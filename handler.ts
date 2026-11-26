@@ -21,6 +21,8 @@ const processedIdsQueue: string[] = [];
 const socketIds = new WeakMap<object, number>();
 let nextSocketId = 0;
 const groupMetaCache = new LRUCache<string, { metadata: any; ts: number }>({ max: 500, ttl: metaTtlMs });
+const groupMetaFailures = new Map<string, number>();
+const groupMetaRequests = new Map<string, Promise<any>>();
 
 function socketId(sock: object): number {
     let id = socketIds.get(sock);
@@ -35,6 +37,9 @@ export function invalidateGroupCache(chatId: string): void {
     if (!chatId) return;
     for (const key of Array.from(groupMetaCache.keys())) {
         if (key.endsWith(`:${chatId}`)) groupMetaCache.delete(key);
+    }
+    for (const key of Array.from(groupMetaFailures.keys())) {
+        if (key.endsWith(`:${chatId}`)) groupMetaFailures.delete(key);
     }
 }
 
@@ -118,15 +123,45 @@ async function getGroupMetadata(sock: any, chatId: string): Promise<any> {
     const key = `${normalizeNumber(sock.user?.id || '')}:${chatId}`;
     const cached = groupMetaCache.get(key);
     if (cached?.metadata) return cached.metadata;
-    try {
-        const metadata = await sock.groupMetadata(chatId);
-        if (metadata) {
-            rememberParticipants(metadata.participants || []);
-            groupMetaCache.set(key, { metadata, ts: Date.now() });
-            return metadata;
+
+    const now = Date.now();
+    const retryAt = groupMetaFailures.get(key) || 0;
+    if (retryAt > now) return null;
+    if (retryAt) groupMetaFailures.delete(key);
+
+    const pending = groupMetaRequests.get(key);
+    if (pending) return pending;
+
+    const request = (async () => {
+        try {
+            const metadata = await sock.groupMetadata(chatId);
+            if (metadata) {
+                rememberParticipants(metadata.participants || []);
+                groupMetaCache.set(key, { metadata, ts: Date.now() });
+                groupMetaFailures.delete(key);
+                return metadata;
+            }
+            groupMetaFailures.set(key, Date.now() + 10000);
+        } catch (error: any) {
+            const rateLimited = Number(error?.data) === 429 ||
+                Number(error?.output?.statusCode) === 429 ||
+                String(error?.message || '').includes('rate-overlimit');
+            groupMetaFailures.set(key, Date.now() + (rateLimited ? 60000 : 10000));
+            if (!rateLimited) console.error('[GROUP METADATA]:', error);
+            if (groupMetaFailures.size > 500) {
+                const oldest = groupMetaFailures.keys().next().value;
+                if (oldest) groupMetaFailures.delete(oldest);
+            }
         }
-    } catch {}
-    return null;
+        return null;
+    })();
+
+    groupMetaRequests.set(key, request);
+    try {
+        return await request;
+    } finally {
+        if (groupMetaRequests.get(key) === request) groupMetaRequests.delete(key);
+    }
 }
 
 // Antilink:
@@ -280,16 +315,7 @@ async function learnSenderIdentity(sock: any, rawMsg: any): Promise<void> {
             return;
         }
         if (chatId.endsWith('@g.us')) {
-            try {
-                const metadata = await sock.groupMetadata(chatId);
-                if (metadata) {
-                    rememberParticipants(metadata.participants || []);
-                    const key = `${normalizeNumber(sock.user?.id || '')}:${chatId}`;
-                    groupMetaCache.set(key, { metadata, ts: Date.now() });
-                }
-            } catch (error) {
-                console.error('[SENDER GROUP METADATA]:', error);
-            }
+            await getGroupMetadata(sock, chatId);
         }
         if (!UserJid(sock, chatId, sender).endsWith('@s.whatsapp.net')) {
             await learnOwnerLids(sock);
