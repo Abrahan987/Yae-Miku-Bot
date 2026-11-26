@@ -4,7 +4,7 @@ import { createWriteStream } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Transform, type Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -103,28 +103,20 @@ async function saveVideo(source: Readable, file: string, length: unknown) {
     const tooLarge = 'El video supera los 64 MiB.';
     try {
         if (Number(length) > MAX_VIDEO) throw new Play2Error(tooLarge);
-        const header = Buffer.alloc(8);
-        let size = 0;
-        const validate = new Transform({
-            transform(chunk: Buffer, _, next) {
-                const offset = size;
-                size += chunk.length;
-                if (size > MAX_VIDEO) return next(new Play2Error(tooLarge));
-                if (offset < header.length) {
-                    chunk.copy(header, offset, 0, Math.min(chunk.length, header.length - offset));
-                    if (size >= header.length && header.toString('ascii', 4, 8) !== 'ftyp') {
-                        return next(new Play2Error('La descarga de StellarWA no contiene un MP4 válido.'));
+        async function* mp4Bytes() {
+            let header = Buffer.alloc(0);
+            for await (const data of limitedBytes(source, MAX_VIDEO, tooLarge)) {
+                if (header.length < 8) {
+                    header = Buffer.concat([header, data.subarray(0, 8 - header.length)]);
+                    if (header.length === 8 && header.toString('ascii', 4, 8) !== 'ftyp') {
+                        throw new Play2Error('La descarga de StellarWA no contiene un MP4 válido.');
                     }
                 }
-                next(null, chunk);
-            },
-            flush(next) {
-                if (!size) return next(new Play2Error('StellarWA devolvió una respuesta vacía.'));
-                if (size < header.length) return next(new Play2Error('StellarWA devolvió un video incompleto.'));
-                next();
+                yield data;
             }
-        });
-        await pipeline(source, validate, createWriteStream(file, { flags: 'wx', highWaterMark: 256 * 1024 }));
+            if (header.length < 8) throw new Play2Error('StellarWA devolvió un video incompleto.');
+        }
+        await pipeline(mp4Bytes(), createWriteStream(file, { flags: 'wx' }));
     } finally {
         source.destroy();
     }
@@ -182,7 +174,6 @@ export default async function (sock: any, msg: any, extra: any) {
     if (processing.has(requestKey)) return msg.reply('𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙴𝙽 𝙿𝚁𝙾𝙲𝙴𝚂𝙾 ❀');
     processing.add(requestKey);
     let directory: string | undefined;
-    const thumbnailRequest = new AbortController();
     try {
         let searchData;
         if (!videoId) {
@@ -209,48 +200,27 @@ export default async function (sock: any, msg: any, extra: any) {
             `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...\n\n` +
             `ꨄ︎ ${global.nmcreador}`;
 
-        let noticeStarted = false;
-        let jpegThumbnail: Buffer | undefined;
-        const textNotice = async () => {
-            noticeStarted = true;
-            await msg.reply(quickInfo);
-        };
-
-        // La vista previa se envía mientras Stellar prepara y descarga el video.
-        void (async () => {
-            try {
-                const { data } = await axios.get(thumb, {
-                    responseType: 'arraybuffer', timeout: 2500,
-                    signal: thumbnailRequest.signal, maxContentLength: 2 * 1024 * 1024
-                });
-                if (thumbnailRequest.signal.aborted) return;
-                const image = Buffer.isBuffer(data) ? data : Buffer.from(data);
-                if (image.length <= 16 * 1024 && image[0] === 0xff && image[1] === 0xd8) {
-                    jpegThumbnail = image;
-                }
-                noticeStarted = true;
-                await sock.sendMessage(msg.from, { image, caption: quickInfo }, { quoted: msg });
-            } catch {
-                if (!thumbnailRequest.signal.aborted) await textNotice();
-            }
-        })().catch(() => {});
+        try {
+            const { data } = await axios.get(thumb, {
+                responseType: 'arraybuffer', timeout: 2500, maxContentLength: 2 * 1024 * 1024
+            });
+            await sock.sendMessage(msg.from, { image: Buffer.from(data), caption: quickInfo }, { quoted: msg });
+        } catch {
+            await msg.reply(quickInfo).catch(() => {});
+        }
 
         directory = await mkdtemp(join(tmpdir(), 'yae-mp4-'));
         const file = join(directory, 'video.mp4');
         const title = (await downloadVideo(cleanUrl, key, file)) || quickTitle;
-        thumbnailRequest.abort();
-        if (!noticeStarted) void textNotice().catch(() => {});
         const name = title.replace(/[\\/:*?"<>|\x00-\x1f]/g, '').trim().slice(0, 100) || 'YouTube Video';
         await sock.sendMessage(msg.from, {
-            video: { url: file }, mimetype: 'video/mp4', fileName: name + '.mp4', caption: title,
-            ...(jpegThumbnail && { jpegThumbnail })
+            video: { url: file }, mimetype: 'video/mp4', fileName: name + '.mp4', caption: title
         }, { quoted: msg, mediaUploadTimeoutMs: 90_000 });
     } catch (error: any) {
         if (error instanceof Play2Error) return msg.reply('🍥 ' + error.message);
         console.error('[PLAY2]', error?.response?.status || error?.code || 'ERROR');
         return msg.reply('🍥 No pude descargar o enviar el video. Intenta de nuevo en un momento.');
     } finally {
-        thumbnailRequest.abort();
         processing.delete(requestKey);
         if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
     }
