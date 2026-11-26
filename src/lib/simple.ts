@@ -39,6 +39,9 @@ function setLidCache(lid: string, jid: string): void {
 
 const messageCache = new WeakMap<object, any>();
 const contentTypeCache = new WeakMap<object, string | undefined>();
+const mediaMessageCache = new WeakMap<object, Map<string, { message: any; expiresAt: number }>>();
+const MEDIA_MESSAGE_CACHE_LIMIT = 500;
+const MEDIA_MESSAGE_CACHE_TTL = 60 * 60 * 1000;
 
 export function rememberParticipants(participants: any[]): void {
     for (const p of participants || []) {
@@ -127,28 +130,79 @@ function unwrapMessage(message: any): any {
     }
 
     let raw = message;
-
-    if (raw.ephemeralMessage) {
-        raw = raw.ephemeralMessage.message;
-    }
-
-    if (raw.viewOnceMessage) {
-        raw = raw.viewOnceMessage.message;
-    }
-
-    if (raw.viewOnceMessageV2) {
-        raw = raw.viewOnceMessageV2.message;
-    }
-
-    if (raw.viewOnceMessageV2Extension) {
-        raw = raw.viewOnceMessageV2Extension.message;
-    }
-
-    if (raw.documentWithCaptionMessage) {
-        raw = raw.documentWithCaptionMessage.message;
-    }
+    const wrappers = [
+        'ephemeralMessage',
+        'viewOnceMessage',
+        'viewOnceMessageV2',
+        'viewOnceMessageV2Extension',
+        'documentWithCaptionMessage'
+    ];
+    let previous: any;
+    do {
+        previous = raw;
+        for (const wrapper of wrappers) {
+            if (raw?.[wrapper]?.message) {
+                raw = raw[wrapper].message;
+                break;
+            }
+        }
+    } while (raw && raw !== previous);
 
     return raw;
+}
+
+function hasMediaDownloadReference(media: any): boolean {
+    return Boolean(
+        media?.mediaKey &&
+        (typeof media.directPath === 'string' && media.directPath ||
+            typeof media.url === 'string' && media.url)
+    );
+}
+
+function rememberMediaMessage(sock: any, message: any): void {
+    const key = message?.key;
+    const id = key?.id;
+    const chatJid = decodeJid(key?.remoteJid || '');
+    if (!sock || !id || !chatJid) return;
+
+    const content = unwrapMessage(message.message);
+    const type = getCachedContentType(content);
+    if (!['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage'].includes(type || '')) return;
+    if (!hasMediaDownloadReference(content[type as string])) return;
+
+    let cache = mediaMessageCache.get(sock);
+    if (!cache) {
+        cache = new Map();
+        mediaMessageCache.set(sock, cache);
+    }
+
+    const now = Date.now();
+    for (const [cacheKey, entry] of cache) {
+        if (entry.expiresAt <= now) cache.delete(cacheKey);
+    }
+
+    const cacheKey = `${chatJid}:${id}`;
+    cache.delete(cacheKey);
+    cache.set(cacheKey, { message: message.message, expiresAt: now + MEDIA_MESSAGE_CACHE_TTL });
+    while (cache.size > MEDIA_MESSAGE_CACHE_LIMIT) {
+        const oldest = cache.keys().next().value;
+        if (oldest) cache.delete(oldest);
+        else break;
+    }
+}
+
+function getCachedMediaMessage(sock: any, chatJid: string, messageId: string): any {
+    const cache = sock && mediaMessageCache.get(sock);
+    const cacheKey = `${decodeJid(chatJid)}:${messageId}`;
+    const entry = cache?.get(cacheKey);
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) {
+        cache?.delete(cacheKey);
+        return null;
+    }
+    cache!.delete(cacheKey);
+    cache!.set(cacheKey, entry);
+    return entry.message;
 }
 
 function extractMessageBody(
@@ -277,6 +331,8 @@ async function downloadMedia(
         return null;
     }
 
+    if (!hasMediaDownloadReference(media)) return null;
+
     try {
         const stream = await downloadContentFromMessage(
             media as any,
@@ -318,9 +374,24 @@ function processQuotedMessage(
             quotedRaw
         );
 
-        const quotedMsg = quotedType
+        let quotedMsg = quotedType
             ? quotedRaw[quotedType]
             : null;
+        if (!hasMediaDownloadReference(quotedMsg) && contextInfo.stanzaId) {
+            const cachedMessage = getCachedMediaMessage(
+                sock,
+                chatJid,
+                String(contextInfo.stanzaId)
+            );
+            if (cachedMessage) {
+                const cachedRaw = unwrapMessage(cachedMessage);
+                const cachedType = getCachedContentType(cachedRaw);
+                const cachedMedia = cachedType ? cachedRaw[cachedType] : null;
+                if (cachedType === quotedType && hasMediaDownloadReference(cachedMedia)) {
+                    quotedMsg = cachedMedia;
+                }
+            }
+        }
 
         const quotedBody =
             quotedRaw?.conversation ||
@@ -404,6 +475,7 @@ export function serialize(
     }
 
     try {
+        rememberMediaMessage(sock, m);
         const rawMsg = unwrapMessage(m.message);
 
         const msgType = getCachedContentType(

@@ -288,21 +288,28 @@ async function normalizeAnimatedWebp(buffer: Buffer, stamp: string, files: strin
 }
 
 async function makeAudioSticker(sock: any, msg: any, files: string[], packname: string, author: string): Promise<void> {
-    const quoted = msg.quoted;
-    if (quoted?.type !== 'videoMessage') {
+    const video = msg.quoted?.type === 'videoMessage'
+        ? msg.quoted
+        : msg.type === 'videoMessage'
+            ? msg
+            : null;
+    if (!video) {
         await msg.reply(
-            `🍓 Responde a un video con sonido y escribe *${(global as any).prefix?.[0] || '.'}stickeraudio*.`
+            `🍓 Responde a un video con sonido y escribe *${(global as any).prefix?.[0] || '.'}stickeraudio*, o envía un video con ese comando como descripción.`
         );
         return;
     }
 
-    if (Number(quoted.msg?.seconds || 0) > 60) {
+    if (Number(video.msg?.seconds || 0) > 60) {
         await msg.reply('⚠️ El video debe durar 60 segundos o menos; el sticker usará los primeros 10.');
         return;
     }
 
-    const source = await quoted.download();
-    if (!source?.length) throw new Error('No pude descargar el video citado.');
+    const source = await video.download();
+    if (!source?.length) {
+        await msg.reply('⚠️ No puedo acceder al archivo del video. Reenvíalo al grupo o envíalo directamente con el comando como descripción y vuelve a intentar.');
+        return;
+    }
     if (source.length > 20 * 1024 * 1024) throw new Error('El video supera el límite de 20 MB.');
 
     const stamp = randomUUID();
@@ -354,10 +361,11 @@ async function makeAudioSticker(sock: any, msg: any, files: string[], packname: 
     stickerMessage.premium = 0;
     stickerMessage.emojis = '🔊';
     stickerMessage.audioMessage = audioMessage;
+    const videoKey = video.key || {};
     stickerMessage.contextInfo = {
-        stanzaId: quoted.key?.id,
-        participant: quoted.key?.participant || quoted.sender,
-        remoteJid: msg.from || msg.chat
+        stanzaId: videoKey.id,
+        participant: videoKey.participant || video.sender || msg.sender,
+        remoteJid: videoKey.remoteJid || msg.from || msg.chat
     };
     await sock.relayMessage(msg.chat || msg.from, { stickerMessage }, {});
 }
