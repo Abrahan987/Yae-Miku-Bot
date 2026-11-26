@@ -1,14 +1,26 @@
 import { isBotMuted, setBotMuted } from '../lib/bot_mute.ts';
+import { isSubbotPrivateModeOwner } from '../lib/private_mode.ts';
+import { deco } from '../lib/perms.ts';
 
 export const command = ['bot'];
 export const category = 'admin';
 export const description = 'Activa o desactiva el bot en el grupo.';
-export const admin = true;
+export const admin = false;
 export const botAdmin = false;
 
-export default async function (sock: any, msg: any, extra: any) {
+export default async function (sock: any, msg: any, extra: any, _db: any, rawMsg: any) {
     if (!msg.isGroup) {
         return msg.reply('🍓 Este comando solo funciona en grupos.');
+    }
+
+    const subbotOwner = sock?.subbotPhone
+        ? isSubbotPrivateModeOwner(sock, msg, rawMsg, String(sock.subbotPhone))
+        : false;
+    if (!extra?.isAdmin && !extra?.isOwner && !subbotOwner) {
+        return msg.reply(deco(
+            '𝙰𝙲𝙲𝙴𝚂𝙾 𝙳𝙴𝙽𝙴𝙶𝙰𝙳𝙾',
+            'Este comando solo puede ser usado por un administrador del grupo o por el propietario de esta instancia.'
+        ));
     }
 
     const chatId = msg.from || msg.chat;
