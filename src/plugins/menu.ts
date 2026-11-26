@@ -1,8 +1,8 @@
-
 import {
     proto,
     type BinaryNode,
     isJidGroup,
+    getDevice,
     generateWAMessageFromContent,
     prepareWAMessageMedia
 } from '@whiskeysockets/baileys';
@@ -521,6 +521,12 @@ export default async function (
 
     const prefix = getPrefix();
 
+    const device = msg.key?.id
+        ? getDevice(msg.key.id)
+        : 'unknown';
+
+    const isIOS = device === 'ios';
+
     const sendFallback = () =>
         sendTextMenu(
             sock,
@@ -533,7 +539,10 @@ export default async function (
             true
         );
 
-    if (selection === 'texto') {
+    if (
+        selection === 'texto' ||
+        (isIOS && !selection)
+    ) {
         return sendOriginalMenu(
             sock,
             msg,
