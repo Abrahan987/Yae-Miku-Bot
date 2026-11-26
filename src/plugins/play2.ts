@@ -1,5 +1,6 @@
 import axios from 'axios';
 import ytsearch from 'yt-search';
+import { randomUUID } from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -28,31 +29,42 @@ function inputId(text: string): string | null {
     throw new Error('Usa un enlace de video de YouTube válido.');
 }
 
-async function stellar(id: string, retryTransient = true) {
+type Trace = (event: string) => void;
+
+async function stellar(id: string, trace: Trace, renewal = false) {
     const key = process.env.STELLAR_API_KEY || global.key;
     if (!key) throw new Error('Falta configurar la clave de StellarWA.');
-    const signal = AbortSignal.timeout(45_000);
+    const phase = renewal ? 'renovación' : 'preparación';
+    const budget = renewal ? 45_000 : 60_000;
+    const signal = AbortSignal.timeout(budget);
     for (let n = 0; ; n++) {
+        const start = performance.now();
         try {
             const { data } = await axios.get(API, {
                 params: { url: 'https://www.youtube.com/watch?v=' + id, quality: 'auto', key },
-                signal, timeout: 40_000, maxContentLength: 512 * 1024
+                signal, timeout: budget, maxContentLength: 512 * 1024
             });
             const v = data?.data;
             if (data?.status !== true || typeof v?.dl !== 'string' || !/^https:\/\//i.test(v.dl)) {
                 throw new Error('StellarWA no devolvió un enlace de video.');
             }
+            trace(`StellarWA ${phase} OK intento=${n + 1} ms=${Math.round(performance.now() - start)}`);
             return { url: v.dl as string, title: String(v.title || ''), author: String(v.author || '') };
         } catch (e) {
             if (!axios.isAxiosError(e)) throw e;
             const status = e.response?.status;
+            trace(`StellarWA ${phase} código=${status || e.code || 'SIN_RESPUESTA'} intento=${n + 1} ms=${Math.round(performance.now() - start)}`);
+            if (signal.aborted || e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') {
+                throw new Error(renewal
+                    ? 'StellarWA tardó demasiado en renovar el enlace después del 403.'
+                    : 'StellarWA tardó demasiado en preparar el enlace del video.');
+            }
             const transient = status ? [502, 503, 504].includes(status) :
                 ['ECONNRESET', 'EAI_AGAIN'].includes(e.code || '');
-            if (retryTransient && n === 0 && transient && !signal.aborted) {
+            if (!renewal && n === 0 && transient && !signal.aborted) {
                 await delay(350);
                 continue;
             }
-            console.warn('[PLAY2] StellarWA', status || e.code);
             throw new Error(status === 401 || status === 403 ? 'StellarWA rechazó la clave o el acceso.' :
                 status === 429 ? 'StellarWA está limitando las solicitudes. Intenta más tarde.' :
                 'StellarWA no pudo preparar el video. Intenta de nuevo en un momento.');
@@ -60,14 +72,17 @@ async function stellar(id: string, retryTransient = true) {
     }
 }
 
-async function openMedia(id: string, originalUrl: string) {
+async function openMedia(id: string, originalUrl: string, trace: Trace) {
     let url = originalUrl;
     for (let attempt = 1; ; attempt++) {
+        const start = performance.now();
         try {
-            return await axios.get(url, {
+            const result = await axios.get(url, {
                 responseType: 'stream', timeout: 20_000, signal: AbortSignal.timeout(120_000),
                 maxRedirects: 5, headers: { Accept: 'video/mp4, application/octet-stream, */*' }
             });
+            trace(`MP4 cabeceras HTTP=${result.status} intento=${attempt} ms=${Math.round(performance.now() - start)}`);
+            return result;
         } catch (e) {
             if (!axios.isAxiosError(e)) throw e;
             const response = e.response;
@@ -76,11 +91,11 @@ async function openMedia(id: string, originalUrl: string) {
 
             // Los enlaces pueden contener firmas. Registrar solo el host.
             const host = new URL(response.data?.responseUrl || url).hostname;
-            console.warn(`[PLAY2] descarga 403 host=${host} intento=${attempt}`);
+            trace(`descarga 403 host=${host} intento=${attempt} ms=${Math.round(performance.now() - start)}`);
             if (attempt === 2) {
                 throw new Error('StellarWA entregó otro enlace, pero la descarga también devolvió 403.');
             }
-            const fresh = await stellar(id, false);
+            const fresh = await stellar(id, trace, true);
             if (fresh.url === url) {
                 throw new Error('StellarWA volvió a entregar el mismo enlace que devolvió 403.');
             }
@@ -109,6 +124,8 @@ export default async function (sock: any, msg: any, extra: any) {
     const request = id || text.toLowerCase();
     if (active.has(request)) return msg.reply('🍥 Esta descarga ya está en proceso ❀');
     active.add(request);
+    const run = randomUUID().slice(0, 8);
+    const trace: Trace = event => console.info(`[PLAY2 ${run}] ${event}`);
     let stage = 'búsqueda';
     try {
         let hit;
@@ -129,7 +146,7 @@ export default async function (sock: any, msg: any, extra: any) {
 
         stage = 'StellarWA';
         const photo = thumbnail(id);
-        const info = await stellar(id);
+        const info = await stellar(id, trace);
         const title = info.title || hit?.title || 'YouTube Video';
         const caption =
             `ᅟㅤ 𓈒    |꛱ ᷼ |꛱ ᷼ |ㅤֵㅤ  ̄ 𐇽 🍓 ㅤ࣫ㅤ|꛱ ᷼ |꛱ ᷼ |ㅤ 𓈒\n\n` +
@@ -153,7 +170,8 @@ export default async function (sock: any, msg: any, extra: any) {
         }).catch(() => {});
 
         stage = 'descarga';
-        const r = await openMedia(id, info.url);
+        const r = await openMedia(id, info.url, trace);
+        const readStart = performance.now();
         const size = Number(r.headers['content-length']);
         const type = String(r.headers['content-type'] || '');
         if (size > LIMIT || /^(text\/|application\/(?:json|xml))/i.test(type)) {
@@ -167,7 +185,10 @@ export default async function (sock: any, msg: any, extra: any) {
                 bytes += chunk.length;
                 next(bytes > LIMIT ? new Error('El video supera los 64 MiB.') : null, chunk);
             },
-            flush(next) { next(bytes ? null : new Error('StellarWA devolvió un archivo vacío.')); }
+            flush(next) {
+                if (bytes) trace(`MP4 leído bytes=${bytes} ms=${Math.round(performance.now() - readStart)}`);
+                next(bytes ? null : new Error('StellarWA devolvió un archivo vacío.'));
+            }
         });
         const transfer = pipeline(r.data, stream);
         const send = async () => {
@@ -188,10 +209,10 @@ export default async function (sock: any, msg: any, extra: any) {
         }
     } catch (e) {
         const code = axios.isAxiosError(e) ? e.response?.status || e.code : undefined;
-        console.warn('[PLAY2]', stage, code || 'ERROR');
         const reason = !axios.isAxiosError(e) && e instanceof Error &&
             /^(StellarWA|El video supera|Falta configurar|La búsqueda tardó)/.test(e.message)
             ? e.message : `Falló la etapa de ${stage}. Intenta de nuevo en un momento.`;
+        trace(`fin: ${reason}${code ? ' (' + code + ')' : ''}`);
         await msg.reply('⚠︎ ' + reason);
     } finally {
         active.delete(request);
