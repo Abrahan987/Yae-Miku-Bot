@@ -1,10 +1,6 @@
 
-import {
-    proto,
-    type BinaryNode,
-    isJidGroup,
-    generateWAMessageFromContent
-} from '@whiskeysockets/baileys';
+import { isJidGroup } from '@whiskeysockets/baileys';
+import { sendInteractiveList } from '../lib/interactive.ts';
 
 import { randomUUID } from 'node:crypto';
 import { db, getUser } from '#db';
@@ -311,118 +307,24 @@ async function sendInteractive(
     mentions: string[],
     fallback: string
 ) {
-    const prefix = getPrefix();
-
     try {
-        const header =
-            proto.Message.InteractiveMessage.Header.create({
-                title: '🍓 YAE TRES EN RAYA',
-                hasMediaAttachment: false
-            });
-
-        const interactiveMessage =
-            proto.Message.InteractiveMessage.create({
-                header,
-
-                body:
-                    proto.Message.InteractiveMessage.Body.create({
-                        text
-                    }),
-
-                footer:
-                    proto.Message.InteractiveMessage.Footer.create({
-                        text: '𐴲੭  ˙ 𓂃  🍥  𓂃  ˙'
-                    }),
-
-                nativeFlowMessage:
-                    proto.Message.InteractiveMessage.NativeFlowMessage.create({
-                        messageVersion: 1,
-                        messageParamsJson: '{}',
-                        buttons: [
-                            {
-                                name: 'single_select',
-                                buttonParamsJson: JSON.stringify({
-                                    title,
-                                    sections: [
-                                        {
-                                            title: '🍓 OPCIONES',
-                                            rows
-                                        }
-                                    ]
-                                })
-                            }
-                        ]
-                    }),
-
-                contextInfo: {
-                    mentionedJid: mentions
-                }
-            });
-
-        const message = generateWAMessageFromContent(
+        return await sendInteractiveList(
+            sock,
             chat,
             {
-                viewOnceMessage: {
-                    message: {
-                        messageContextInfo: {
-                            deviceListMetadata: {},
-                            deviceListMetadataVersion: 2
-                        },
-                        interactiveMessage
-                    }
-                }
-            },
-            {
-                userJid: sock.user?.id || '',
-                quoted: msg
-            }
-        );
-
-        if (!message.message || !message.key.id) {
-            throw new Error('Mensaje interactivo inválido.');
-        }
-
-        const additionalNodes: BinaryNode[] = [
-            {
-                tag: 'biz',
-                attrs: {},
-                content: [
+                title: '🍓 YAE TRES EN RAYA',
+                description: text,
+                footer: '𐴲੭  ˙ 𓂃  🍥  𓂃  ˙',
+                buttonText: title,
+                mentions,
+                sections: [
                     {
-                        tag: 'interactive',
-                        attrs: {
-                            type: 'native_flow',
-                            v: '1'
-                        },
-                        content: [
-                            {
-                                tag: 'native_flow',
-                                attrs: {
-                                    name: 'mixed',
-                                    v: '9'
-                                }
-                            }
-                        ]
+                        title: '🍓 OPCIONES',
+                        rows
                     }
                 ]
-            }
-        ];
-
-        if (!isJidGroup(chat)) {
-            additionalNodes.unshift({
-                tag: 'bot',
-                attrs: {
-                    biz_bot: '1'
-                }
-            });
-        }
-
-        return await sock.relayMessage(
-            chat,
-            message.message,
-            {
-                messageId: message.key.id,
-                additionalNodes
-            }
+            },
+            msg
         );
     } catch (error) {
         console.error('[TRES INTERACTIVE ERROR]:', error);
