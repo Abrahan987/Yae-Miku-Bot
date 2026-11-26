@@ -8,7 +8,7 @@ async function ezgif(kind: 'png' | 'mp4', source: Buffer) {
     const base = `https://ezgif.com/webp-to-${kind}`;
     const form = new FormData();
     form.append('new-image-url', '');
-    form.append('new-image', new Blob([source]), 'image.webp');
+    form.append('new-image', new Blob([new Uint8Array(source)]), 'image.webp');
 
     const res = await fetch(base, { method: 'POST', body: form as any });
     const $ = cheerio.load(await res.text());

@@ -185,7 +185,6 @@ ${rosa}─────── ❀ ───────${reset}
             emitOwnEvents: false,
             generateHighQualityLinkPreview: false,
             syncFullHistory: false,
-            downloadHistory: false,
             fireInitQueries: false,
             keepAliveIntervalMs: 30000,
             connectTimeoutMs: 60000,

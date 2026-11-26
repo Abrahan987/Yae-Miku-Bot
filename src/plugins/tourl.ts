@@ -22,7 +22,7 @@ async function uploadAdoFiles(buffer: Buffer, mime: string) {
 
 async function uploadFare(buffer: Buffer, mime: string) {
     const form = new FormData();
-    form.append('file', new Blob([buffer]), uniqueName(mime));
+    form.append('file', new Blob([new Uint8Array(buffer)]), uniqueName(mime));
     const res = await fetch('https://u.fare.ink/api/upload', { method: 'POST', body: form as any });
     const body: any = await res.json();
     const url = body?.file?.publicUrl;
@@ -34,7 +34,7 @@ async function uploadFare(buffer: Buffer, mime: string) {
 
 async function uploadUguu(buffer: Buffer, mime: string) {
     const form = new FormData();
-    form.append('files[]', new Blob([buffer]), uniqueName(mime));
+    form.append('files[]', new Blob([new Uint8Array(buffer)]), uniqueName(mime));
     const res = await fetch('https://uguu.se/upload.php', { method: 'POST', body: form as any });
     const body: any = await res.json();
     const url = body?.files?.[0]?.url;

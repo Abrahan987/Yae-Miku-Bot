@@ -9,13 +9,33 @@ export const commandMap = new Map<string, Function>();
 
 export const pluginData = new Map<string, { commands: string[]; category: string; description: string }>();
 let pluginWatcher: fs.FSWatcher | undefined;
+let activeLoad: Promise<void> | undefined;
+let reloadRequested = false;
 
 export async function loadPlugins(dir = '../plugins') {
+    if (activeLoad) {
+        reloadRequested = true;
+        await activeLoad;
+        return;
+    }
+
+    activeLoad = (async () => {
+        do {
+            reloadRequested = false;
+            await loadPluginSnapshot(dir);
+        } while (reloadRequested);
+    })();
+
+    try {
+        await activeLoad;
+    } finally {
+        activeLoad = undefined;
+    }
+}
+
+async function loadPluginSnapshot(dir: string): Promise<void> {
     const cmdDir = path.resolve(__dirname, dir);
     if (!fs.existsSync(cmdDir)) return;
-
-    commandMap.clear();
-    pluginData.clear();
 
     async function getAllFiles(directory: string): Promise<string[]> {
         const entries = await fsPromises.readdir(directory, { withFileTypes: true });
@@ -27,9 +47,12 @@ export async function loadPlugins(dir = '../plugins') {
     }
 
     try {
-        const allFiles = await getAllFiles(cmdDir);
+        const allFiles = (await getAllFiles(cmdDir)).sort();
         const files = allFiles.filter(f => (f.endsWith('.ts') || f.endsWith('.js')) && !f.endsWith('.d.ts'));
         const ts = Date.now();
+        const nextCommands = new Map<string, Function>();
+        const nextPluginData = new Map<string, { commands: string[]; category: string; description: string }>();
+        let failed = false;
 
         await Promise.all(files.map(async fullPath => {
             try {
@@ -52,22 +75,33 @@ export async function loadPlugins(dir = '../plugins') {
                     needsGroupMetadata: cmdModule.needsGroupMetadata !== false
                 };
 
-                for (const cmd of commands) commandMap.set(cmd, handlerFn);
+                for (const cmd of commands) nextCommands.set(cmd, handlerFn);
 
                 const menuEntries: { command: string[]; description: string }[] | undefined = Array.isArray(cmdModule.menu) ? cmdModule.menu : undefined;
                 if (menuEntries?.length) {
                     menuEntries.forEach((entry, i) => {
                         const entryCmds = (entry.command || []).filter(Boolean).map((c: any) => String(c).toLowerCase());
                         if (!entryCmds.length) return;
-                        pluginData.set(`${fullPath}#${i}`, { commands: entryCmds, category: String(category).toLowerCase(), description: String(entry.description || description) });
+                        nextPluginData.set(`${fullPath}#${i}`, { commands: entryCmds, category: String(category).toLowerCase(), description: String(entry.description || description) });
                     });
                 } else if (commands.length) {
-                    pluginData.set(fullPath, { commands, category: String(category).toLowerCase(), description: String(description) });
+                    nextPluginData.set(fullPath, { commands, category: String(category).toLowerCase(), description: String(description) });
                 }
             } catch (error) {
+                failed = true;
                 console.error('\x1b[38;2;255;182;218m[ PLUGIN ] Error:\x1b[0m', fullPath, error);
             }
         }));
+
+        if (failed) {
+            console.error('\x1b[38;2;255;182;218m[ PLUGIN ] Se conserva la última carga válida.\x1b[0m');
+            return;
+        }
+
+        commandMap.clear();
+        pluginData.clear();
+        for (const [command, handler] of nextCommands) commandMap.set(command, handler);
+        for (const [key, data] of nextPluginData) pluginData.set(key, data);
     } catch (e) {
         console.error('\x1b[38;2;255;182;218m[ ERROR ] Error al cargar plugins:\x1b[0m', e);
     }
