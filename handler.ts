@@ -11,6 +11,7 @@ import { LRUCache } from 'lru-cache';
 import { isOwner as isOwnerPerm } from './src/lib/perms.ts';
 import { runWithBot, installBotIdentity, setMainSocket } from './src/lib/botcontext.ts';
 import { isPrivateModeEnabled } from './src/lib/private_mode.ts';
+import { isBotMuted } from './src/lib/bot_mute.ts';
 
 installBotIdentity();
 
@@ -448,6 +449,7 @@ export function handler(sock: WASocket) {
                 }
 
                 if (msg.isGroup && text.toLowerCase() === 'aceptar') {
+                    if ((sock as any).subbotPhone && isBotMuted(sock, msg.from)) continue;
                     try {
                         if (await handleGachaAccept(sock, msg)) continue;
                     } catch (e) {
@@ -465,7 +467,7 @@ export function handler(sock: WASocket) {
 
                 if (msg.isGroup && cleanCmd !== 'bot') {
                     let muted = false;
-                    try { muted = Number(getGroup(msg.from).mute) === 1; } catch {}
+                    try { muted = isBotMuted(sock, msg.from); } catch {}
                     if (muted) continue;
                 }
 

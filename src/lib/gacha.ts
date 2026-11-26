@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, getUser, updateUser, getCooldown, setCooldown, getGroup } from './database.ts';
 import { UserJid, decodeJid } from './simple.ts';
+import { isBotMuted } from './bot_mute.ts';
 
 db.exec(`
     CREATE TABLE IF NOT EXISTS gacha_settings (
@@ -676,7 +677,7 @@ export async function handleGachaAccept(sock: any, msg: any): Promise<boolean> {
     if (!give && !trade) return false;
 
     try {
-        if (Number(getGroup(chatId).mute) === 1) return false;
+        if (isBotMuted(sock, chatId)) return false;
     } catch {}
 
     if (!isGachaEnabled(chatId)) return false;

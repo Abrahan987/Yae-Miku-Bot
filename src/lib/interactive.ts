@@ -1,7 +1,8 @@
 import {
     proto,
     generateWAMessageFromContent,
-    type WASocket
+    type WASocket,
+    type WAMessage
 } from '@whiskeysockets/baileys';
 
 type Row = {
@@ -33,7 +34,7 @@ export async function sendInteractiveList(
     sock: WASocket,
     jid: string,
     options: ListOptions,
-    quoted?: proto.IWebMessageInfo
+    quoted?: WAMessage
 ) {
     const sections = options.sections.map(section => ({
         title: clean(section.title),
