@@ -13,6 +13,18 @@ const DEFAULT_AGENT =
 
 const processing = new Set<string>();
 
+class StellarUnavailable extends Error {}
+
+// Retry-After puede ser una cantidad de segundos o una fecha HTTP.
+function retryAfterMs(value: unknown): number | undefined {
+    if (typeof value !== 'string' && typeof value !== 'number') return;
+    const raw = String(value).trim();
+    if (/^\d+$/.test(raw)) return Number(raw) * 1000;
+    if (!/[a-z]/i.test(raw)) return;
+    const date = Date.parse(raw);
+    if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+}
+
 interface StellarVideo {
     title?: string;
     author?: string;
@@ -87,12 +99,29 @@ const fetchVideoInfo = async (
             }
 
             console.log('[PLAY2] StellarWA sin descarga válida.');
+            return null;
 
         } catch (error: any) {
+            const status = error?.response?.status;
             console.log(
                 `[PLAY2] Falló StellarWA (intento ${attempt}):`,
                 error?.response?.status || error?.code || 'Error desconocido'
+                status || error?.code || 'Error desconocido'
             );
+            if (status === 503) {
+                const advised = retryAfterMs(error.response.headers?.['retry-after']);
+                const wait = advised ?? 2000;
+                if (attempt === 2 || wait > 5000) {
+                    const hint = advised && Number.isFinite(advised)
+                        ? `Vuelve a intentarlo en ${Math.ceil(advised / 1000)} s.`
+                        : 'Vuelve a intentarlo más tarde.';
+                    throw new StellarUnavailable(`StellarWA no está disponible por el momento (503). ${hint}`);
+                }
+                console.log(`[PLAY2] Reintento de StellarWA en ${wait} ms.`);
+                await delay(wait);
+                continue;
+            }
+            if (status && status < 500) return null;
         }
     }
 
@@ -243,7 +272,16 @@ export default async function (
             }
         })().catch(() => {});
 
+        let info: StellarVideo | null;
+        try {
         const info = await infoPromise;
+            info = await infoPromise;
+        } catch (error) {
+            finished = true;
+            thumbAbort.abort();
+            if (error instanceof StellarUnavailable) return msg.reply('🍥 ' + error.message);
+            throw error;
+        }
 
         if (!info) {
             finished = true;
