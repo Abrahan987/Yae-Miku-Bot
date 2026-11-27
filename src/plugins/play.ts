@@ -140,7 +140,7 @@ function isMp3(bytes: Buffer): boolean {
     return false;
 }
 
-async function stellar(endpoint: 'ytmp3v2' | 'ytmp3v3', url: string): Promise<AudioLink> {
+async function stellar(endpoint: 'ytmp3' | 'ytmp3v3', url: string): Promise<AudioLink> {
     const key = String(global.key || '').trim();
     if (!key) throw new Error('global.key no está configurada');
 
@@ -219,7 +219,7 @@ async function downloadMp3(link: string, videoId: string, seconds?: number): Pro
 async function fetchAudio(videoId: string, seconds?: number): Promise<AudioFile> {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     const providers = [
-        { name: 'Stellar V2', run: () => stellar('ytmp3v2', url) },
+        { name: 'Stellar', run: () => stellar('ytmp3', url) },
         { name: 'Stellar V3', run: () => stellar('ytmp3v3', url) },
         { name: 'Ryuzei', run: () => ryuzei(url) }
     ];
@@ -235,7 +235,7 @@ async function fetchAudio(videoId: string, seconds?: number): Promise<AudioFile>
         }
     }
 
-    throw new Error('Stellar V2, Stellar V3 y Ryuzei no lograron descargar el audio');
+    throw new Error('Stellar, Stellar V3 y Ryuzei no lograron descargar el audio');
 }
 
 async function acquireAudio(videoId: string, seconds?: number): Promise<AudioFile> {
