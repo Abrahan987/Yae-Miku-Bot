@@ -7,7 +7,7 @@ export const admin = false;
 export const botAdmin = false;
 
 const ESPERA_MS = 80000;
-const MAX_SUBS = 50;
+const MAX_SUBS = 60;
 const tiempos = new Map<string, number>();
 
 function formatearTiempo(ms: number): string {
