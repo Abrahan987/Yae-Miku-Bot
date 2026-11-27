@@ -24,6 +24,7 @@ const UA = 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/120.0.0.0 
 interface AudioLink {
     dl: string;
     title?: string;
+    params?: { url: string; key: string };
 }
 
 interface AudioFile {
@@ -144,8 +145,12 @@ async function stellar(endpoint: 'ytmp3' | 'ytmp3v3', url: string): Promise<Audi
     const key = String(global.key || '').trim();
     if (!key) throw new Error('global.key no está configurada');
 
-    const { data } = await client.get(`https://api.stellarwa.xyz/dl/${endpoint}`, {
-        params: { url, key },
+    const api = `https://api.stellarwa.xyz/dl/${endpoint}`;
+    const params = { url, key };
+    if (endpoint === 'ytmp3') return { dl: api, params };
+
+    const { data } = await client.get(api, {
+        params,
         timeout: 35_000,
         headers: { Accept: 'application/json' }
     });
@@ -168,18 +173,25 @@ async function ryuzei(url: string): Promise<AudioLink> {
     return { dl, title: result?.title };
 }
 
-async function downloadMp3(link: string, videoId: string, seconds?: number): Promise<AudioFile> {
+async function downloadMp3(link: AudioLink, videoId: string, seconds?: number): Promise<AudioFile> {
     const directory = await getTemporaryDirectory();
     const file = join(directory, `${videoId}-${randomUUID()}.mp3`);
-    const response = await client.get(link, {
+    const response = await client.get(link.dl, {
+        params: link.params,
         responseType: 'stream',
         timeout: 100_000,
+        validateStatus: () => true,
         headers: { Accept: 'audio/mpeg,audio/*,*/*' }
     });
 
     const type = String(response.headers['content-type'] || '').toLowerCase();
     const length = Number(response.headers['content-length'] || 0);
     const stream = response.data;
+
+    if (response.status < 200 || response.status >= 300) {
+        stream.destroy();
+        throw new Error(`HTTP ${response.status}`);
+    }
 
     if (/text\/|application\/(?:json|xml)|html/.test(type) || length > MAX_AUDIO_BYTES) {
         stream.destroy();
@@ -227,7 +239,7 @@ async function fetchAudio(videoId: string, seconds?: number): Promise<AudioFile>
     for (const provider of providers) {
         try {
             const result = await provider.run();
-            const audio = await downloadMp3(result.dl, videoId, seconds);
+            const audio = await downloadMp3(result, videoId, seconds);
             console.log(`[PLAY] ${provider.name}: audio listo (${(audio.bytes / MB).toFixed(2)} MB)`);
             return audio;
         } catch (error) {
