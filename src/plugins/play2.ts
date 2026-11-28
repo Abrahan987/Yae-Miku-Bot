@@ -1,191 +1,160 @@
-import axios from 'axios';
 import ytsearch from 'yt-search';
-import { createWriteStream } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import { setTimeout as delay } from 'node:timers/promises';
+import axios from 'axios';
 
 export const command = ['play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'];
 export const category = 'descargas';
 export const description = 'Busca y descarga videos de YouTube en formato MP4.';
+const VIDEO_FORMAT = '360p';
 
-const MAX_VIDEO = 64 * 1024 * 1024;
-const MAX_JSON = 512 * 1024;
-const ENDPOINT = 'https://api.stellarwa.xyz/dl/ytmp4';
+const DEFAULT_AGENT =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
 const processing = new Set<string>();
 
-class Play2Error extends Error {}
+interface GapiVideo {
+    title?: string;
+    author?: string;
+    channel?: string;
+    views?: string;
+    likes?: string;
+    image?: string;
+    format?: string;
+    download: string;
+}
 
-function getVideoId(input: string): string | null {
-    const text = input.trim();
-    if (/^[a-zA-Z0-9_-]{11}$/.test(text)) return text;
-    try {
-        const url = new URL(text);
-        const host = url.hostname.toLowerCase();
-        if (host === 'youtu.be' || host === 'www.youtu.be') {
-            const id = url.pathname.split('/')[1];
-            return /^[a-zA-Z0-9_-]{11}$/.test(id || '') ? id : null;
+const cleanTitle = (title: string) => {
+    return title
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 100);
+};
+
+const extractVideoId = (input: string): string | null => {
+    if (!input) return null;
+    const patterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+        /^([a-zA-Z0-9_-]{11})$/
+    ];
+    for (const p of patterns) {
+        const m = input.match(p);
+        if (m) return m[1];
+    }
+    return null;
+};
+const GAPI_HOST = 'youtube-downloader-video-mp3-one-ready-file.p.rapidapi.com';
+
+const fetchVideoInfo = async (cleanUrl: string): Promise<GapiVideo | null> => {
+    const key = (process.env.RAPIDAPI_KEY || 'afb6736b16msh41daa328396ecf7p1caf15jsn885cf0fe8d4b').trim();
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const { data } = await axios.get(`https://${GAPI_HOST}/youtube`, {
+                params: { url: cleanUrl, format: VIDEO_FORMAT.replace(/p$/, '') },
+                timeout: 60000,
+                headers: {
+                    'x-rapidapi-key': key,
+                    'x-rapidapi-host': GAPI_HOST,
+                    'Accept': 'application/json'
+                }
+            });
+
+            const media = Array.isArray(data?.media)
+                ? data.media.find((item: any) => item?.type === 'video' && item?.ext === 'mp4')
+                : undefined;
+
+            if (!media || typeof media.url !== 'string') {
+                throw new Error('GAPI no devolvió un enlace MP4');
+            }
+            const download = new URL(media.url);
+            if (download.protocol !== 'https:' || download.username || download.password) {
+                throw new Error('GAPI devolvió un enlace inválido');
+            }
+
+            return {
+                title: data.title,
+                author: data.author,
+                image: data.thumbnail,
+                format: media.quality || VIDEO_FORMAT,
+                download: download.href
+            };
+        } catch (err: any) {
+            const status = err?.response?.status;
+            console.log(`[PLAY2] GAPI intento ${attempt}:`, status ? `HTTP ${status}` : 'Error de solicitud');
+            if (status && status < 500) break;
         }
-        if (!['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(host)) return null;
-        const id = url.searchParams.get('v') || url.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]{11})/)?.[1];
-        return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
-    } catch {
+    }
+    return null;
+};
+
+// Descarga el archivo a buffer (solo se usa si enviar por URL falla)
+const downloadBuffer = async (url: string): Promise<Buffer | null> => {
+    try {
+        const res = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            maxRedirects: 5,
+            headers: { 'User-Agent': DEFAULT_AGENT, 'Accept': '*/*' }
+        });
+        const buffer = Buffer.from(res.data);
+        return buffer.length > 10 * 1024 ? buffer : null;
+    } catch (err: any) {
+        console.log('[PLAY2] Error descargando buffer:', err?.message || err);
         return null;
     }
-}
+};
 
-function retryAfterMs(value: unknown): number | undefined {
-    if (typeof value !== 'string' && typeof value !== 'number') return;
-    const raw = String(value).trim();
-    if (/^\d+$/.test(raw)) return Number(raw) * 1000;
-    if (!/[a-z]/i.test(raw)) return;
-    const date = Date.parse(raw);
-    if (Number.isFinite(date)) return Math.max(0, date - Date.now());
-}
+export default async function (sock: any, msg: any, extra: any, db: any) {
+    const text = extra.args.join(' ').trim();
 
-async function* limitedBytes(source: Readable, limit: number, errorText: string) {
-    let size = 0;
-    for await (const chunk of source) {
-        const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        size += data.length;
-        if (size > limit) throw new Play2Error(errorText);
-        yield data;
-    }
-    if (!size) throw new Play2Error('StellarWA devolvió una respuesta vacía.');
-}
-
-function downloadInfo(body: any) {
-    if (body?.status === false || body?.success === false) return;
-    const item = body?.data ?? body?.result ?? body;
-    const links = typeof item === 'string' ? [item] :
-        [item?.dl, item?.download, item?.downloadUrl, item?.download_url, item?.url, body?.dl];
-    for (const value of links) {
-        if (typeof value !== 'string' || !URL.canParse(value)) continue;
-        const url = new URL(value);
-        if (url.protocol !== 'https:' || url.username || url.password) continue;
-        if (/(^|\.)(youtube\.com|youtu\.be)$/i.test(url.hostname)) continue;
-        return { url: url.href, title: typeof item?.title === 'string' ? item.title : undefined };
-    }
-}
-
-async function getStellarResponse(url: string, key: string) {
-    for (let attempt = 1; ; attempt++) {
-        try {
-            console.log(`[PLAY2] StellarWA intento ${attempt}`);
-            return await axios.get<Readable>(ENDPOINT, {
-                params: { url, quality: 'auto', key },
-                responseType: 'stream',
-                timeout: 60_000,
-                signal: AbortSignal.timeout(180_000),
-                headers: { Accept: 'application/json, video/mp4, */*' }
-            });
-        } catch (error: any) {
-            error.response?.data?.destroy?.();
-            const status = error.response?.status;
-            if (status === 401 || status === 403) {
-                throw new Play2Error('StellarWA rechazó la clave o el acceso a la descarga.');
-            }
-            if (status === 429) throw new Play2Error('StellarWA alcanzó su límite de solicitudes. Intenta más tarde.');
-            const wait = retryAfterMs(error.response?.headers?.['retry-after']) ?? 2000;
-            if (status === 503 && (attempt === 2 || wait > 5000)) {
-                throw new Play2Error('StellarWA no está disponible por el momento (503). Intenta más tarde.');
-            }
-            if (attempt === 2 || (status && status < 500) || wait > 5000) throw error;
-            await delay(wait);
-        }
-    }
-}
-
-async function saveVideo(source: Readable, file: string, length: unknown) {
-    const tooLarge = 'El video supera los 64 MiB.';
-    try {
-        if (Number(length) > MAX_VIDEO) throw new Play2Error(tooLarge);
-        async function* mp4Bytes() {
-            let header = Buffer.alloc(0);
-            for await (const data of limitedBytes(source, MAX_VIDEO, tooLarge)) {
-                if (header.length < 8) {
-                    header = Buffer.concat([header, data.subarray(0, 8 - header.length)]);
-                    if (header.length === 8 && header.toString('ascii', 4, 8) !== 'ftyp') {
-                        throw new Play2Error('La descarga de StellarWA no contiene un MP4 válido.');
-                    }
-                }
-                yield data;
-            }
-            if (header.length < 8) throw new Play2Error('StellarWA devolvió un video incompleto.');
-        }
-        await pipeline(mp4Bytes(), createWriteStream(file, { flags: 'wx' }));
-    } finally {
-        source.destroy();
-    }
-}
-
-async function downloadVideo(url: string, key: string, file: string) {
-    const response = await getStellarResponse(url, key);
-    const type = String(response.headers['content-type'] ?? '').toLowerCase().split(';')[0].trim();
-    if (type === 'video/mp4' || type === 'application/octet-stream') {
-        await saveVideo(response.data, file, response.headers['content-length']);
-        return;
-    }
-
-    const chunks: Buffer[] = [];
-    for await (const chunk of limitedBytes(response.data, MAX_JSON, 'La respuesta de StellarWA es demasiado grande.')) {
-        chunks.push(chunk);
-    }
-    let body;
-    try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-    catch { throw new Play2Error('StellarWA devolvió una respuesta desconocida.'); }
-    const info = downloadInfo(body);
-    if (!info) throw new Play2Error('StellarWA no devolvió un enlace de descarga para ese video.');
-
-    const media = await axios.get<Readable>(info.url, {
-        responseType: 'stream',
-        timeout: 60_000,
-        signal: AbortSignal.timeout(180_000),
-        validateStatus: () => true
-    });
-    if (media.status < 200 || media.status >= 300) {
-        media.data.destroy();
-        throw new Play2Error(`El servidor del video rechazó la descarga (HTTP ${media.status}).`);
-    }
-    await saveVideo(media.data, file, media.headers['content-length']);
-    return info.title;
-}
-
-export default async function (sock: any, msg: any, extra: any) {
-    const text = (extra?.args || []).join(' ').trim();
     if (!text) {
         return msg.reply(
             `🍓 𝙴𝚂𝙲𝚁𝙸𝙱𝙴 𝙴𝙻 𝙽𝙾𝙼𝙱𝚁𝙴 𝙾 𝚄𝚁𝙻 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾\n\n` +
-            `𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n> ${global.prefix?.[0] ?? '.'}mp4 Oh Klahoma`
+            `𝙴𝙹𝙴𝙼𝙿𝙻𝙾\n` +
+            `> ${global.prefix[0]}play2 Oh Klahoma`
         );
     }
-    const key = process.env.STELLAR_API_KEY || global.key;
-    if (!key) return msg.reply('🍥 Falta configurar la clave de StellarWA en Yae.');
 
-    const isLink = /^(?:https?:\/\/|(?:[\w-]+\.)*(?:youtube\.com|youtube-nocookie\.com|youtu\.be)\/)/i.test(text);
-    const input = isLink && !/^https?:\/\//i.test(text) ? 'https://' + text : text;
-    let videoId = getVideoId(input);
-    if (isLink && !videoId) return msg.reply('🍥 Usa un enlace de YouTube que apunte a un video.');
+    const requestKey = text.toLowerCase();
 
-    const requestKey = JSON.stringify([msg.from, videoId || text.toLowerCase()]);
-    if (processing.has(requestKey)) return msg.reply('𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙴𝙽 𝙿𝚁𝙾𝙲𝙴𝚂𝙾 ❀');
+    if (processing.has(requestKey)) {
+        return msg.reply(`𝙴𝚂𝚃𝙰 𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰 𝚈𝙰 𝙴𝚂𝚃Á 𝙴𝙽 𝙿𝚁𝙾𝙲𝙴𝚂𝙾 ❀`);
+    }
+
     processing.add(requestKey);
-    let directory: string | undefined;
+
     try {
-        let searchData;
-        if (!videoId) {
+        let videoId: string | null = null;
+        let searchData: any = null;
+
+        const isYoutubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(text);
+
+        if (isYoutubeUrl) {
+            videoId = extractVideoId(text);
+            if (!videoId) {
+                return msg.reply(`🍥 𝙴𝙻 𝙴𝙽𝙻𝙰𝙲𝙴 𝙳𝙴 𝚈𝙾𝚄𝚃𝚄𝙱𝙴 𝙽𝙾 𝙴𝚂 𝚅Á𝙻𝙸𝙳𝙾 ❀`);
+            }
+        } else {
             const result = await ytsearch(text);
-            searchData = result.videos?.[0];
-            if (!searchData) return msg.reply('🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀');
-            videoId = getVideoId(searchData.videoId || searchData.url || '');
-            if (!videoId) return msg.reply('🍥 No pude identificar el video de esa búsqueda.');
+            if (!result.videos?.length) {
+                return msg.reply(`🍥 𝙽𝙾 𝙴𝙽𝙲𝙾𝙽𝚃𝚁É 𝚅Í𝙳𝙴𝙾𝚂 𝙿𝙰𝚁𝙰 𝙴𝚂𝙰 𝙱Ú𝚂𝚀𝚄𝙴𝙳𝙰 ❀`);
+            }
+            searchData = result.videos[0];
+            videoId = searchData.videoId || extractVideoId(searchData.url);
+        }
+
+        if (!videoId) {
+            return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝙸𝙳 𝙳𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
         }
 
         const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        const thumb = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+        const thumb =
+            searchData?.thumbnail ||
+            searchData?.image ||
+            `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
         const quickTitle = searchData?.title || 'YouTube Video';
         const quickAuthor = searchData?.author?.name || 'Desconocido';
 
@@ -196,32 +165,66 @@ export default async function (sock: any, msg: any, extra: any) {
             `🍓͜ᩧ𑂳ᰍ  𝚈𝙾𝚄𝚃𝚄𝙱𝙴 𝚅𝙸𝙳𝙴𝙾\n\n` +
             `🪷 𝚃Í𝚃𝚄𝙻𝙾 ── ${quickTitle}\n` +
             `🍥 𝙰𝚄𝚃𝙾𝚁 ── ${quickAuthor}\n` +
-            `📺 𝙲𝙰𝙻𝙸𝙳𝙰𝙳 ── Automática\n\n` +
+            `📺 𝙲𝙰𝙻𝙸𝙳𝙰𝙳 ── ${VIDEO_FORMAT}\n\n` +
             `𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝙽𝙳𝙾 𝚅Í𝙳𝙴𝙾...\n\n` +
             `ꨄ︎ ${global.nmcreador}`;
+        const infoPromise = fetchVideoInfo(cleanUrl);
 
         try {
-            const { data } = await axios.get(thumb, {
-                responseType: 'arraybuffer', timeout: 2500, maxContentLength: 2 * 1024 * 1024
-            });
-            await sock.sendMessage(msg.from, { image: Buffer.from(data), caption: quickInfo }, { quoted: msg });
+            const thumbRes = await axios.get(thumb, { responseType: 'arraybuffer', timeout: 15000 });
+            await sock.sendMessage(
+                msg.from,
+                { image: Buffer.from(thumbRes.data), caption: quickInfo },
+                { quoted: msg }
+            );
         } catch {
-            await msg.reply(quickInfo).catch(() => {});
+            await msg.reply(quickInfo);
         }
 
-        directory = await mkdtemp(join(tmpdir(), 'yae-mp4-'));
-        const file = join(directory, 'video.mp4');
-        const title = (await downloadVideo(cleanUrl, key, file)) || quickTitle;
-        const name = title.replace(/[\\/:*?"<>|\x00-\x1f]/g, '').trim().slice(0, 100) || 'YouTube Video';
-        await sock.sendMessage(msg.from, {
-            video: { url: file }, mimetype: 'video/mp4', fileName: name + '.mp4', caption: title
-        }, { quoted: msg, mediaUploadTimeoutMs: 90_000 });
+        const info = await infoPromise;
+
+        if (!info) {
+            return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
+        }
+
+        const title = info.title || quickTitle;
+        const fileName = `${cleanTitle(title)}.mp4`;
+        try {
+            await sock.sendMessage(
+                msg.from,
+                {
+                    video: { url: info.download },
+                    mimetype: 'video/mp4',
+                    fileName,
+                    caption: title
+                },
+                { quoted: msg }
+            );
+            return;
+        } catch (err: any) {
+            console.log('[PLAY2] Envío por URL falló, probando con buffer:', err?.message || err);
+        }
+        const buffer = await downloadBuffer(info.download);
+
+        if (!buffer) {
+            return msg.reply(`⚠︎ 𝙽𝙾 𝙿𝚄𝙳𝙴 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
+        }
+
+        await sock.sendMessage(
+            msg.from,
+            {
+                video: buffer,
+                mimetype: 'video/mp4',
+                fileName,
+                caption: title
+            },
+            { quoted: msg }
+        );
     } catch (error: any) {
-        if (error instanceof Play2Error) return msg.reply('🍥 ' + error.message);
-        console.error('[PLAY2]', error?.response?.status || error?.code || 'ERROR');
-        return msg.reply('🍥 No pude descargar o enviar el video. Intenta de nuevo en un momento.');
+        console.error('[PLAY2]', error?.message || error);
+        await msg.reply(`⚠︎ 𝙾𝙲𝚄𝚛𝚛𝙸𝚘́ 𝚞𝚗 𝚎𝚛𝚛𝚘𝚛 𝙰𝙻 𝙾𝙱𝚃𝙴𝙽𝙴𝚁 𝙴𝙻 𝚅Í𝙳𝙴𝙾`);
     } finally {
         processing.delete(requestKey);
-        if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
     }
 }
+
