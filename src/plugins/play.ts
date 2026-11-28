@@ -24,7 +24,6 @@ const UA = 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/120.0.0.0 
 interface AudioLink {
     dl: string;
     title?: string;
-    params?: { url: string; key: string };
 }
 
 interface AudioFile {
@@ -141,57 +140,45 @@ function isMp3(bytes: Buffer): boolean {
     return false;
 }
 
-async function stellar(endpoint: 'ytmp3' | 'ytmp3v3', url: string): Promise<AudioLink> {
-    const key = String(global.key || '').trim();
-    if (!key) throw new Error('global.key no está configurada');
+const GAPI_HOST = 'youtube-downloader-video-mp3-one-ready-file.p.rapidapi.com';
 
-    const api = `https://api.stellarwa.xyz/dl/${endpoint}`;
-    const params = { url, key };
-    if (endpoint === 'ytmp3') return { dl: api, params };
+async function gapi(url: string): Promise<AudioLink> {
+    const key = (process.env.RAPIDAPI_KEY || 'afb6736b16msh41daa328396ecf7p1caf15jsn885cf0fe8d4b').trim();
+    if (!key) throw new Error('RAPIDAPI_KEY no está configurada');
 
-    const { data } = await client.get(api, {
-        params,
-        timeout: 35_000,
-        headers: { Accept: 'application/json' }
+    const { data } = await client.get(`https://${GAPI_HOST}/youtube`, {
+        params: { url, format: 'mp3' },
+        timeout: 60_000,
+        headers: {
+            'x-rapidapi-key': key,
+            'x-rapidapi-host': GAPI_HOST,
+            Accept: 'application/json'
+        }
     });
 
-    const result = data?.data || data?.result || data;
-    const dl = [result?.dl, result?.download, result?.downloadUrl, result?.url, data?.dl].find(validDownloadUrl);
-    if (data?.status === false || !dl) throw new Error('Stellar no entregó un MP3 válido');
-    return { dl, title: result?.title };
+    const media = Array.isArray(data?.media)
+        ? data.media.find((item: any) => item?.type === 'audio' && item?.ext === 'mp3')
+        : undefined;
+
+    if (!media || !validDownloadUrl(media.url) || new URL(media.url).protocol !== 'https:') {
+        throw new Error('GAPI no entregó un enlace MP3 válido');
+    }
+
+    return { dl: media.url, title: typeof data?.title === 'string' ? data.title : undefined };
 }
 
-async function ryuzei(url: string): Promise<AudioLink> {
-    const { data } = await client.get('https://api.ryuzei.xyz/download/ytmp3', {
-        params: { url },
-        timeout: 35_000,
-        headers: { Accept: 'application/json' }
-    });
-    const result = data?.data || data?.result || data;
-    const dl = [result?.download, result?.dl, result?.url].find(validDownloadUrl);
-    if (data?.status === false || !dl) throw new Error('Ryuzei no entregó un MP3 válido');
-    return { dl, title: result?.title };
-}
-
-async function downloadMp3(link: AudioLink, videoId: string, seconds?: number): Promise<AudioFile> {
+async function downloadMp3(link: string, videoId: string, seconds?: number): Promise<AudioFile> {
     const directory = await getTemporaryDirectory();
     const file = join(directory, `${videoId}-${randomUUID()}.mp3`);
-    const response = await client.get(link.dl, {
-        params: link.params,
+    const response = await client.get(link, {
         responseType: 'stream',
         timeout: 100_000,
-        validateStatus: () => true,
         headers: { Accept: 'audio/mpeg,audio/*,*/*' }
     });
 
     const type = String(response.headers['content-type'] || '').toLowerCase();
     const length = Number(response.headers['content-length'] || 0);
     const stream = response.data;
-
-    if (response.status < 200 || response.status >= 300) {
-        stream.destroy();
-        throw new Error(`HTTP ${response.status}`);
-    }
 
     if (/text\/|application\/(?:json|xml)|html/.test(type) || length > MAX_AUDIO_BYTES) {
         stream.destroy();
@@ -230,24 +217,10 @@ async function downloadMp3(link: AudioLink, videoId: string, seconds?: number): 
 
 async function fetchAudio(videoId: string, seconds?: number): Promise<AudioFile> {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const providers = [
-        { name: 'Stellar', run: () => stellar('ytmp3', url) },
-        { name: 'Stellar V3', run: () => stellar('ytmp3v3', url) },
-        { name: 'Ryuzei', run: () => ryuzei(url) }
-    ];
-
-    for (const provider of providers) {
-        try {
-            const result = await provider.run();
-            const audio = await downloadMp3(result, videoId, seconds);
-            console.log(`[PLAY] ${provider.name}: audio listo (${(audio.bytes / MB).toFixed(2)} MB)`);
-            return audio;
-        } catch (error) {
-            console.error(`[PLAY] ${provider.name}: ${errorText(error)}`);
-        }
-    }
-
-    throw new Error('Stellar, Stellar V3 y Ryuzei no lograron descargar el audio');
+    const result = await gapi(url);
+    const audio = await downloadMp3(result.dl, videoId, seconds);
+    console.log(`[PLAY] GAPI: audio listo (${(audio.bytes / MB).toFixed(2)} MB)`);
+    return audio;
 }
 
 async function acquireAudio(videoId: string, seconds?: number): Promise<AudioFile> {
@@ -371,3 +344,5 @@ export default async function (sock: any, msg: any, extra: any, db: any) {
         if (audio) releaseAudio(audio);
     }
 }
+
+
