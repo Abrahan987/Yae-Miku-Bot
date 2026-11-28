@@ -541,6 +541,7 @@ export default async function (
 
     if (
         selection === 'texto' ||
+        (!msg.isGroup && !selection) ||
         (isIOS && !selection)
     ) {
         return sendOriginalMenu(

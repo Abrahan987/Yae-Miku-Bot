@@ -169,10 +169,52 @@ async function getGroupMetadata(sock: any, chatId: string): Promise<any> {
 //  - Link normal  -> se elimina el mensaje.
 //  - Link de WhatsApp -> se elimina el mensaje y se expulsa a quien lo envio.
 // Los admins y el owner estan exentos. Devuelve true si el mensaje fue eliminado.
-async function handleAntilink(sock: any, msg: any, rawMsg: any, text: string): Promise<boolean> {
+const downloaderDomains: Record<string, string[]> = {
+    tiktok: ['tiktok.com'],
+    tt: ['tiktok.com'],
+    ttdl: ['tiktok.com'],
+    instagram: ['instagram.com'],
+    ig: ['instagram.com'],
+    igdl: ['instagram.com'],
+    facebook: ['facebook.com', 'fb.watch'],
+    fb: ['facebook.com', 'fb.watch'],
+    play: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    mp3: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    ytmp3: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    ytaudio: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    playaudio: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    play2: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    mp4: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    ytmp4: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    ytvideo: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    playvideo: ['youtube.com', 'youtu.be', 'youtube-nocookie.com']
+};
+
+function isSupportedDownloaderLink(command: string, text: string): boolean {
+    const domains = downloaderDomains[command];
+    if (!domains) return false;
+
+    const links = text.match(
+        /(?:https?:\/\/|www\.)[^\s]+|(?:^|\s)[a-z0-9.-]+\.(?:com|net|org|io|gg|xyz|me|info|co|tv|app|link|site|online)(?:\/\S*)?/gi
+    ) || [];
+    if (!links.length) return false;
+
+    return links.every(link => {
+        const value = link.trim().replace(/[),.!?]+$/, '');
+        try {
+            const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+            return domains.some(domain => url.hostname === domain || url.hostname.endsWith(`.${domain}`));
+        } catch {
+            return false;
+        }
+    });
+}
+
+async function handleAntilink(sock: any, msg: any, rawMsg: any, text: string, allowDownloaderLink = false): Promise<boolean> {
     if (!msg.isGroup || rawMsg?.key?.fromMe) return false;
     if (!containsLink(text)) return false;
     if (!isAntilinkEnabled(msg.from)) return false;
+    if (allowDownloaderLink) return false;
 
     try {
         const metadata = await getGroupMetadata(sock, msg.from);
@@ -457,9 +499,13 @@ export function handler(sock: WASocket) {
                     }
                 }
 
-                if (await handleAntilink(sock, msg, rawMsg, text)) continue;
-
                 const parsed = extractCommandInfo(text);
+                const allowDownloaderLink = Boolean(
+                    parsed &&
+                    commandMap.has(parsed.cleanCmd) &&
+                    isSupportedDownloaderLink(parsed.cleanCmd, text)
+                );
+                if (await handleAntilink(sock, msg, rawMsg, text, allowDownloaderLink)) continue;
                 if (!parsed) continue;
                 const { cleanCmd, usedPrefix } = parsed;
                 const runFn: any = commandMap.get(cleanCmd) || commandMap.get(`${usedPrefix}${cleanCmd}`);
